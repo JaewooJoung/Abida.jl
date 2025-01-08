@@ -86,6 +86,75 @@ using Random
         cleanup!(agi)
     end
 
+    @testset "Rethinking" begin
+        db_path = joinpath(test_dir, "rethink_test.duckdb")
+        agi = AGI(db_path)
+
+        # Learn some sentences
+        learn!(agi, "Julia is a fast programming language.")
+        learn!(agi, "Python is a popular language for data science.")
+
+        # Test rethinking
+        rethink!(agi, "What is Julia?")
+        result = DBInterface.execute(agi.conn, "SELECT COUNT(*) FROM sentence_relationships")
+        @test first(result)[1] > 0  # At least one relationship should be created
+
+        cleanup!(agi)
+    end
+
+    @testset "Reiterate" begin
+        db_path = joinpath(test_dir, "reiterate_test.duckdb")
+        agi = AGI(db_path)
+
+        # Learn some sentences
+        learn!(agi, "Julia is a fast programming language.")
+        learn!(agi, "Python is a popular language for data science.")
+
+        # Test reiterate
+        reiterate!(agi)
+        @test length(agi.doc_embeddings) == 2  # Ensure embeddings are updated
+
+        cleanup!(agi)
+    end
+
+    @testset "LookForWord" begin
+        db_path = joinpath(test_dir, "lookforword_test.duckdb")
+        agi = AGI(db_path)
+
+        # Learn some sentences
+        learn!(agi, "Julia is a fast programming language.")
+        learn!(agi, "Python is a popular language for data science.")
+
+        # Test lookforword
+        results = lookforword(agi, "programming")
+        @test !isempty(results)  # At least one result should be found
+
+        cleanup!(agi)
+    end
+
+    @testset "Memory of Past Interactions" begin
+        db_path = joinpath(test_dir, "memory_test.duckdb")
+        agi = AGI(db_path)
+
+        # Test storing interactions
+        response, confidence, best_doc = answer(agi, "What is Julia?")
+        result = DBInterface.execute(agi.conn, "SELECT COUNT(*) FROM interactions")
+        @test first(result)[1] == 1  # One interaction should be stored
+
+        cleanup!(agi)
+    end
+
+    @testset "Error Handling" begin
+        db_path = joinpath(test_dir, "error_test.duckdb")
+        agi = AGI(db_path)
+
+        # Test fallback mechanism
+        response = answer_with_fallback(agi, "What is a nonexistent topic?")
+        @test response == "I don’t know."  # Fallback response for unknown questions
+
+        cleanup!(agi)
+    end
+
     # Clean up test directory
     rm(test_dir, recursive=true, force=true)
 end
