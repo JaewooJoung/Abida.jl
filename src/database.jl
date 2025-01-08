@@ -45,6 +45,25 @@ function init_database(conn::DuckDB.DB)
             feedback TEXT NOT NULL
         )
     """)
+    
+    DBInterface.execute(conn, """
+        CREATE TABLE IF NOT EXISTS sentence_relationships (
+            sentence_id_1 INTEGER,
+            sentence_id_2 INTEGER,
+            strength FLOAT,
+            FOREIGN KEY (sentence_id_1) REFERENCES documents(id),
+            FOREIGN KEY (sentence_id_2) REFERENCES documents(id)
+        )
+    """)
+    
+    DBInterface.execute(conn, """
+        CREATE TABLE IF NOT EXISTS interactions (
+            id INTEGER PRIMARY KEY,
+            question TEXT,
+            answer TEXT,
+            timestamp DATETIME
+        )
+    """)
 end
 
 function load_data(conn::DuckDB.DB, config::TransformerConfig)
