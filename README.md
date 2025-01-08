@@ -1,2 +1,2 @@
 # Abida.jl
-Improved trial from Snild
+Improved trial from Snild.jl
