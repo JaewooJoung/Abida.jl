@@ -4,7 +4,7 @@ Improved trial from Snild.jl
 ```mermaid
 graph TD;
     A1[A]:::red;
-    A2[Artificial];
+    A2[**A**rtificial];
     B1[B]:::blue;
     B2[Business];
     C1[I]:::green;
