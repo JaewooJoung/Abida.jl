@@ -4,15 +4,15 @@ Improved trial from Snild.jl
 ```mermaid
 graph TD;
     A1[A]:::red;
-    A2[rtificial];
+    A2[Artificial];
     B1[B]:::blue;
-    B2[usiness];
+    B2[Business];
     C1[I]:::green;
-    C2[ntelligence];
+    C2[Intelligence];
     D1[D]:::purple;
-    D2[atabase];
+    D2[Database];
     E1[A]:::orange;
-    E2[pplications];
+    E2[Applications];
 
     A1 --> A2;
     B1 --> B2;
