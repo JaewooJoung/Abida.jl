@@ -201,14 +201,4 @@ function answer(ai::AGI, question::String)
     end
 
     # If we found a good word overlap match, use it
-    if best_match_score > 0.2
-        confidence = best_match_score * 100
-        return "($(round(confidence, digits=2))% relevant) $best_doc", confidence, best_doc
-    end
-
-    # Fall back to embedding similarity if no good direct matches
-    question_embeddings = encode_text(ai, question)
-    question_embedding = transformer_encode(ai, question_embeddings)
-
-    for (doc, embed) in zip(ai.documents, ai.doc_embeddings)
-        q_n
+    if best_match_score > 
