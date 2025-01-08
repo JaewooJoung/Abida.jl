@@ -6,13 +6,13 @@ graph TD;
     A1[A]:::red;
     A2[**A**rtificial];
     B1[B]:::blue;
-    B2[Business];
+    B2[**B**usiness];
     C1[I]:::green;
-    C2[Intelligence];
+    C2[**I**ntelligence];
     D1[D]:::purple;
-    D2[Database];
+    D2[**D**atabase];
     E1[A]:::orange;
-    E2[Applications];
+    E2[**A**pplications];
 
     A1 --> A2;
     B1 --> B2;
