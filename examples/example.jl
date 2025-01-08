@@ -65,8 +65,8 @@ function learn_from_text(text_file, oracle)
 end
 
 # Main execution
-folder_path = "/home/crux/문서/book2/"
-db_file = joinpath(folder_path, "book_knowledge.duckdb")
+folder_path = "/media/crux/ss4/kdb"
+db_file = joinpath(folder_path, "uknow.duckdb")
 
 # Initialize AGI once
 oracle = AGI(db_file)
