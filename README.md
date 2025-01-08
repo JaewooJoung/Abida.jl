@@ -1,8 +1,17 @@
 # Abida.jl
 Improved trial from Snild.jl
 
-## <span style="color:red;"><b>A</b></span>rtificial
-## <span style="color:blue;"><b>B</b></span>usiness
-## <span style="color:green;"><b>I</b></span>ntelligence
-## <span style="color:purple;"><b>D</b></span>atabase
-## <span style="color:orange;"><b>A</b></span>pplications
+```mermaid
+graph TD;
+    A[Artificial]:::red;
+    B[Business]:::blue;
+    C[Intelligence]:::green;
+    D[Database]:::purple;
+    E[Applications]:::orange;
+
+    classDef red fill:#f9c7c4,stroke:#333,stroke-width:2px;
+    classDef blue fill:#c7d5f9,stroke:#333,stroke-width:2px;
+    classDef green fill:#d5f9c7,stroke:#333,stroke-width:2px;
+    classDef purple fill:#e1c7f9,stroke:#333,stroke-width:2px;
+    classDef orange fill:#f9e1c7,stroke:#333,stroke-width:2px;
+```
