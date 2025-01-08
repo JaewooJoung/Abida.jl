@@ -86,7 +86,15 @@ for (i, pdf_file) in enumerate(pdf_files)
     
     # Learn from this file
     learn_from_text(text_file, oracle)
+    
+    # Rethink after learning
+    println("Rethinking...")
+    rethink!(oracle, "Processed $(basename(pdf_file))")
 end
+
+# Reiterate after processing all files
+println("Reiterating...")
+reiterate!(oracle)
 
 # Example questions to test knowledge
 questions = [
@@ -116,10 +124,21 @@ while true
     end
     
     if !isempty(question)
+        # Look for word before answering
+        println("Looking for relevant information...")
+        lookforword(oracle, question)
+        
+        # Answer the question
         response, confidence, best_doc = answer(oracle, question)
         println("Answer: $response")
         println("Confidence: $confidence")
         println("Best Document: $best_doc")
+        
+        # Store the interaction
+        DBInterface.execute(oracle.conn, """
+            INSERT INTO interactions (question, answer, timestamp)
+            VALUES (?, ?, datetime('now'))
+        """, (question, response))
     end
 end
 
