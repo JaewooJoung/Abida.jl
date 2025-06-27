@@ -1,13 +1,14 @@
 # types.jl
-
 struct TransformerConfig
-    d_model::Int       # Dimension of embeddings
-    n_head::Int        # Number of attention heads
-    d_ff::Int          # Feed-forward layer size
-    max_seq_length::Int # Max sequence length
+    d_model::Int
+    n_head::Int
+    d_ff::Int
+    max_seq_length::Int
 end
 
 const DEFAULT_CONFIG = TransformerConfig(128, 4, 512, 64)
+
+export TransformerConfig, DEFAULT_CONFIG
 
 struct Vocabulary
     word_to_idx::Dict{String, Int}
