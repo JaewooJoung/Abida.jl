@@ -1,12 +1,10 @@
 # types.jl
-using DuckDB
-using Transformers.Basic
 
 struct TransformerConfig
-    d_model::Int
-    n_head::Int
-    d_ff::Int
-    max_seq_length::Int
+    d_model::Int       # Dimension of embeddings
+    n_head::Int        # Number of attention heads
+    d_ff::Int          # Feed-forward layer size
+    max_seq_length::Int # Max sequence length
 end
 
 const DEFAULT_CONFIG = TransformerConfig(128, 4, 512, 64)
