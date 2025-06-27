@@ -30,6 +30,7 @@ struct DocumentStore
     embeddings::Vector{Vector{Float32}}
 end
 
+# types.jl
 mutable struct AGI
     vocab::Vocabulary
     word_embeddings::WordEmbeddings
@@ -37,4 +38,6 @@ mutable struct AGI
     docs::DocumentStore
     config::TransformerConfig
     conn::DuckDB.Connection
+    db::Union{DuckDB.DB, Nothing}  
 end
+
