@@ -1,5 +1,6 @@
 # transformer_utils.jl
 
+using Transformers
 using Transformers.Basic
 
 """
