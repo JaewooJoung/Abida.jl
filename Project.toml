@@ -1,11 +1,10 @@
-# Project.toml
 name = "Abida"
 uuid = "23832524-0b97-42bf-bbfe-519582e38482"
 authors = ["JaewooJoung <jaewoo.joung@outlook.com>"]
 version = "0.1.0"
 
 [deps]
-Transformers = "3783bf0b-c14d-4a3d-bb97-6c80e65b4a11"
+Transformers = "21462f47-4223-5c79-928c-b0f0e13c0a0b"
 DuckDB = "d2f5444f-75bc-4fdf-ac35-56f514c445e1"
 Languages = "8ef0a80b-9436-5d2c-a485-80b904378c43"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
@@ -28,7 +27,6 @@ TextAnalysis = "0.8.2"
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
-
 
 [targets]
 test = ["Test", "Random"]
