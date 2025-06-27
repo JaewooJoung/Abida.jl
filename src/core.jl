@@ -273,8 +273,10 @@ Cleans up resources (e.g., closes database connection).
 =#
 function cleanup!(ai::AGI)
     close(ai.conn)
+    if !isnothing(ai.db)
+        close(ai.db)
+    end
 end
-
 #=
     save(ai, path)
 
