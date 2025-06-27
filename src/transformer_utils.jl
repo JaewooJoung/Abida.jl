@@ -1,7 +1,7 @@
 # transformer_utils.jl
 
 using Transformers
-using Transformers.Basic
+using Transformers.Layers 
 
 """
     gelu(x)
