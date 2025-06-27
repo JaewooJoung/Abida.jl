@@ -1,102 +1,115 @@
 using Abida
 using PDFIO
 
-# Extract text from PDF using pdftotext
+# --- Functions ---
+
 function read_pdf_text(pdf_path)
-    read(`pdftotext -layout -nopgbrk $pdf_path -`, String)
+    pdf = open(pdf_path, PDFDoc)
+    text = ""
+    for p in 1:getpagecount(pdf)
+        page = getpage(pdf, p)
+        text *= pagetotext(page)
+    end
+    close(pdf)
+    return text
 end
 
-# Clean and split text into sentences
 function clean_and_split_text(text)
-    # Clean the text
-    cleaned = replace(text, r"\r\n|\r|\n" => " ")  # Replace line breaks
-    cleaned = replace(cleaned, r"\s+" => " ")      # Normalize whitespace
-    cleaned = strip(cleaned)                       # Remove leading/trailing whitespace
+    cleaned = replace(text, r"\r\n|\r|\n" => " ")
+    cleaned = replace(cleaned, r"\s+" => " ")
+    cleaned = strip(cleaned)
     
-    # Split into sentences and filter valid ones
-    sentences = split(cleaned, r"(?<=[.!?])\s+|(?<=[.!?])$")
+    sentences = split(cleaned, r"(?<=[.!?])\s+")
     valid_sentences = filter(s -> length(strip(s)) >= 20, sentences)
     
     return valid_sentences
 end
 
-# Extract PDF text and save to file
 function extract_pdf_text(pdf_path)
     println("Extracting text from: $(basename(pdf_path))")
-    
-    # Create output path in same folder as PDF
     output_file = string(splitext(pdf_path)[1], ".txt")
     
-    # Extract and process text
-    text_content = read_pdf_text(pdf_path)
-    sentences = clean_and_split_text(text_content)
-    
-    # Save sentences to file
-    open(output_file, "w") do io
-        for sentence in sentences
-            println(io, strip(sentence))
-        end
-    end
-    
-    println("Total sentences found: $(length(sentences))")
-    println("Saved to: $output_file")
-    
-    return output_file
-end
-
-# Learn from extracted text
-function learn_from_text(text_file, oracle)
-    println("Learning from: $(basename(text_file))")
-    
-    # Read and learn from each line
-    count = 0
-    for line in eachline(text_file)
-        line = String(strip(line))  # Convert SubString to String
-        if !isempty(line)
-            learn!(oracle, line)
-            count += 1
-            if count % 100 == 0
-                print(".")  # Progress indicator
+    try
+        text_content = read_pdf_text(pdf_path)
+        sentences = clean_and_split_text(text_content)
+        
+        open(output_file, "w") do io
+            for sentence in sentences
+                println(io, strip(sentence))
             end
         end
+        
+        println("Total sentences found: $(length(sentences))")
+        println("Saved to: $output_file")
+        return output_file
+    catch e
+        @warn "Failed to process PDF" exception=e
+        return nothing
     end
-    
-    println("\nLearned $count sentences from $(basename(text_file))")
 end
 
-# Main execution
+function learn_from_text(text_file, oracle)
+    lines = filter(!isempty, [strip(l) for l in eachline(text_file)])
+    count = length(lines)
+    if count == 0 return end
+    
+    println("Learning from $count sentences...")
+    
+    DBInterface.execute(oracle.conn, "BEGIN TRANSACTION")
+    try
+        for line in lines
+            learn!(oracle, line)
+        end
+        DBInterface.execute(oracle.conn, "COMMIT")
+    catch e
+        DBInterface.execute(oracle.conn, "ROLLBACK")
+        rethrow(e)
+    end
+    
+    println("Learned $count sentences")
+end
+
+# --- Main Logic ---
+
 folder_path = "/media/crux/ss4/kdb"
 db_file = joinpath(folder_path, "uknow.duckdb")
 
-# Initialize AGI once
-oracle = AGI(db_file)
+# Initialize AGI
+try
+    global oracle = AGI(db_file)
+catch e
+    @error "Failed to initialize AGI" exception=e
+    exit()
+end
 
-# Get all PDF files
+# Get PDFs
 pdf_files = filter(f -> endswith(lowercase(f), ".pdf"), readdir(folder_path))
 println("Found $(length(pdf_files)) PDF files")
 
-# Process each PDF file
+# Process each PDF
 for (i, pdf_file) in enumerate(pdf_files)
     pdf_path = joinpath(folder_path, pdf_file)
-    
     println("\nProcessing file $i/$(length(pdf_files)): $pdf_file")
     
-    # Extract text and get the output file path
     text_file = extract_pdf_text(pdf_path)
+    if text_file === nothing continue end
     
-    # Learn from this file
     learn_from_text(text_file, oracle)
-    
-    # Rethink after learning
-    println("Rethinking...")
-    rethink!(oracle, "Processed $(basename(pdf_file))")
 end
 
-# Reiterate after processing all files
+# Rethink once
+println("Rethinking...")
+rethink!(oracle, "Processed all books")
+
+# Reiterate
 println("Reiterating...")
 reiterate!(oracle)
 
-# Example questions to test knowledge
+# Save state
+println("Saving knowledge base...")
+save(oracle, joinpath(folder_path, "oracle_state.jld2"))
+
+# Test questions
 questions = [
     "What is the main theme of these books?",
     "Who are the main characters?",
@@ -108,12 +121,14 @@ println("\nTesting knowledge:")
 for question in questions
     println("\nQ: $question")
     response, confidence, best_doc = answer(oracle, question)
+    if confidence < 0.1f0
+        response = "I'm unsure about that."
+    end
     println("A: $response")
     println("Confidence: $confidence")
-    println("Best Document: $best_doc")
 end
 
-# Interactive mode
+# Interactive loop
 println("\nEnter your questions (type 'exit' to quit):")
 while true
     print("\nYour question: ")
@@ -123,23 +138,34 @@ while true
         break
     end
     
-    if !isempty(question)
-        # Look for word before answering
-        println("Looking for relevant information...")
-        lookforword(oracle, question)
-        
-        # Answer the question
-        response, confidence, best_doc = answer(oracle, question)
-        println("Answer: $response")
-        println("Confidence: $confidence")
-        println("Best Document: $best_doc")
-        
-        # Store the interaction
-        DBInterface.execute(oracle.conn, """
-            INSERT INTO interactions (question, answer, timestamp)
-            VALUES (?, ?, datetime('now'))
-        """, (question, response))
+    if isempty(question)
+        continue
     end
+
+    # Show related sentences
+    results = lookforword(oracle, question)
+    if !isempty(results)
+        println("\nRelevant info:")
+        for res in results[1:min(3, length(results))]
+            println("- $res")
+        end
+    else
+        println("No relevant content found.")
+    end
+
+    # Get answer
+    response, confidence, best_doc = answer(oracle, question)
+    if confidence < 0.1f0
+        response = "I'm unsure about that."
+    end
+    println("Answer: $response")
+    println("Confidence: $confidence")
+    
+    # Log interaction
+    DBInterface.execute(oracle.conn, """
+        INSERT INTO interactions (question, answer, timestamp)
+        VALUES (?, ?, datetime('now'))
+    """, (question, response))
 end
 
 # Cleanup
