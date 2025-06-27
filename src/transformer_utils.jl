@@ -69,18 +69,14 @@ Generates sinusoidal positional encodings.
 =#
 function positional_encoding(max_len::Int, d_model::Int)
     pos = collect(0:max_len-1)
-    i = collect(0:2:d_model-1)  # Even indices only: 0, 2, 4, ...
+    i = collect(0:2:d_model-1)  # Only even indices
     
-    # Create angle rates for even positions
     angle_rates = 1f0 ./ (10000f0 .^ (i ./ d_model))
+    angle_rads = pos * angle_rates'  # (max_len, d_model/2)
     
-    # Calculate angle radians
-    angle_rads = pos * angle_rates'  # Results in (max_len, d_model/2)
-    
-    # Create encoding matrix
     encoding = zeros(Float32, max_len, d_model)
-    encoding[:, 1:2:end] = sin.(angle_rads)  # Odd indices (1, 3, 5, ...)
-    encoding[:, 2:2:end] = cos.(angle_rads)  # Even indices (2, 4, 6, ...)
+    encoding[:, 1:2:end] = sin.(angle_rads)
+    encoding[:, 2:2:end] = cos.(angle_rads)
     
     return permutedims(encoding, [2, 1])  # (d_model, max_len)
 end
