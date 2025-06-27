@@ -71,10 +71,11 @@ function positional_encoding(max_len::Int, d_model::Int)
     encoding = zeros(Float32, d_model, max_len)
     
     for pos in 1:max_len
-        for i in 1:2:d_model
-            encoding[i, pos] = sin(pos / (10000^((i-1)/d_model)))
-            if i+1 <= d_model
-                encoding[i+1, pos] = cos(pos / (10000^((i-1)/d_model)))
+        for i in 1:d_model
+            if i % 2 == 1  # odd indices (1, 3, 5, ...)
+                encoding[i, pos] = sin(pos / (10000.0^((i-1)/d_model)))
+            else  # even indices (2, 4, 6, ...)
+                encoding[i, pos] = cos(pos / (10000.0^((i-2)/d_model)))
             end
         end
     end
