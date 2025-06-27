@@ -68,15 +68,16 @@ end
 Generates sinusoidal positional encodings.
 =#
 function positional_encoding(max_len::Int, d_model::Int)
-    pos = collect(0:max_len-1)
-    i = collect(0:2:d_model-1)  # Only even indices
+    encoding = zeros(Float32, d_model, max_len)
     
-    angle_rates = 1f0 ./ (10000f0 .^ (i ./ d_model))
-    angle_rads = pos * angle_rates'  # (max_len, d_model/2)
+    for pos in 1:max_len
+        for i in 1:2:d_model
+            encoding[i, pos] = sin(pos / (10000^((i-1)/d_model)))
+            if i+1 <= d_model
+                encoding[i+1, pos] = cos(pos / (10000^((i-1)/d_model)))
+            end
+        end
+    end
     
-    encoding = zeros(Float32, max_len, d_model)
-    encoding[:, 1:2:end] = sin.(angle_rads)
-    encoding[:, 2:2:end] = cos.(angle_rads)
-    
-    return permutedims(encoding, [2, 1])  # (d_model, max_len)
+    return encoding
 end
