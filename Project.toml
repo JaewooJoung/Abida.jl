@@ -19,7 +19,7 @@ Unicode = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
 
 # Add missing dependencies
 Embeddings = "94ba59b3-5ae7-5d13-9439-27cea72794ae"
-Transformers = "3783bf0b-cb53-4a3d-bb97-6c80e65b4atm"
+Transformers = "3783bf0b-c14d-4a3d-bb97-6c80e65b4a11"
 HTTP = "cd3eb016-45a3-4ab2-a0db-6dc281f9c9d0"
 Gumbo = "7073ff75-6d3b-403c-b3c5-ed8fced8cc19"
 Cascadia = "1343515f-c14d-4b7c-a748-831b96f5225b"
