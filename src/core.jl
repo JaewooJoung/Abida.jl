@@ -2,7 +2,8 @@
 
 using DuckDB
 using Logging
-using JLD2
+using JLDArchives
+
 
 # Internal includes
 include("types.jl")
@@ -274,14 +275,14 @@ end
 Saves AGI state to disk.
 =#
 function save(ai::AGI, path::String)
-    jldsave(path;
-        vocab_idx_to_word=ai.vocab.idx_to_word,
-        vocab_word_to_idx=ai.vocab.word_to_idx,
-        word_embeddings=ai.word_embeddings.matrix,
-        positional_enc=ai.positional_enc.matrix,
-        documents=ai.docs.documents,
-        doc_embeddings=ai.docs.embeddings
-    )
+    jldopen(path, "w") do file
+        write(file, "vocab_idx_to_word", ai.vocab.idx_to_word)
+        write(file, "vocab_word_to_idx", ai.vocab.word_to_idx)
+        write(file, "word_embeddings", ai.word_embeddings.matrix)
+        write(file, "positional_enc", ai.positional_enc.matrix)
+        write(file, "documents", ai.docs.documents)
+        write(file, "doc_embeddings", ai.docs.embeddings)
+    end
 end
 
 #=
@@ -291,23 +292,23 @@ Loads AGI state from disk.
 =#
 function load(path::String, config::TransformerConfig, db_path::String)
     data = jldopen(path, "r")
-    vocab_words = data["vocab_idx_to_word"]
-    vocab_indices = data["vocab_word_to_idx"]
+    vocab_words = read(data, "vocab_idx_to_word", Vector{String})
+    vocab_indices = read(data, "vocab_word_to_idx", Dict{String, Int})
 
     vocab = Vocabulary()
     for (word, idx) in vocab_indices
         vocab.word_to_idx[word] = idx
+        vocab.idx_to_word = vocab_words
     end
-    vocab.idx_to_word = vocab_words
 
     close(data)
     conn = DBInterface.connect(DuckDB.DB, db_path)
 
     AGI(
         vocab,
-        WordEmbeddings(data["word_embeddings"]),
-        PositionalEncoding(data["positional_enc"]),
-        DocumentStore(data["documents"], data["doc_embeddings"]),
+        WordEmbeddings(read(data, "word_embeddings", Matrix{Float32})),
+        PositionalEncoding(read(data, "positional_enc", Matrix{Float32})),
+        DocumentStore(read(data, "documents", Vector{String}), read(data, "doc_embeddings", Vector{Vector{Float32}})),
         config,
         conn
     )
