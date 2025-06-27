@@ -4,12 +4,13 @@ module Abida
 using LinearAlgebra
 using Statistics
 using DuckDB
+using DBInterface
 using Transformers
 using TextAnalysis
 using Languages
 using SparseArrays
-using Embeddings
 using Logging
+using JLD2
 
 export AGI, learn!, answer, cleanup!, reset_knowledge!
 
