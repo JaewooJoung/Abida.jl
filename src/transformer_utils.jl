@@ -2,6 +2,9 @@
 
 using Transformers
 using Transformers.Layers 
+using Statistics: mean, std
+using LinearAlgebra: norm
+using NNlib: softmax
 
 """
     gelu(x)
