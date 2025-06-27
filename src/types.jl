@@ -1,37 +1,41 @@
 # types.jl
+using DuckDB
+using Transformers.Basic
 
 struct TransformerConfig
-    d_model::Int        # Embedding dimension
-    n_head::Int         # Number of attention heads
-    d_ff::Int          # Feed-forward dimension
-    dropout::Float32    # Dropout rate
-    max_seq_length::Int # Maximum sequence length
+    d_model::Int
+    n_head::Int
+    d_ff::Int
+    max_seq_length::Int
 end
 
-# Default configuration
-const DEFAULT_CONFIG = TransformerConfig(
-    64,    # d_model
-    4,     # n_head
-    256,   # d_ff
-    0.1f0, # dropout
-    512    # max_seq_length
-)
+const DEFAULT_CONFIG = TransformerConfig(128, 4, 512, 64)
+
+struct Vocabulary
+    word_to_idx::Dict{String, Int}
+    idx_to_word::Vector{String}
+end
+
+Vocabulary() = Vocabulary(Dict(), String[])
+
+struct WordEmbeddings
+    matrix::Matrix{Float32}
+end
+
+struct PositionalEncoding
+    matrix::Matrix{Float32}
+end
+
+struct DocumentStore
+    documents::Vector{String}
+    embeddings::Vector{Vector{Float32}}
+end
 
 mutable struct AGI
-    documents::Vector{String}
-    doc_embeddings::Vector{Vector{Float32}}
-    vocab::Dict{String,Int}
-    word_embeddings::Matrix{Float32}  # Word embedding matrix
-    positional_enc::Matrix{Float32}   # Positional encoding matrix
+    vocab::Vocabulary
+    word_embeddings::WordEmbeddings
+    positional_enc::PositionalEncoding
+    docs::DocumentStore
     config::TransformerConfig
-    idf::Vector{Float32}
-    knowledge_base::Dict{String,Any}
-    db_path::String
-    conn::DuckDB.DB
-end
-
-struct KnowledgeGraph
-    entities::Dict{String, Int}
-    relations::Dict{String, Int}
-    triples::Vector{Tuple{Int, Int, Int}}
+    conn::DuckDB.Connection
 end
