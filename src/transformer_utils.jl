@@ -6,20 +6,20 @@ using Statistics: mean, std
 using LinearAlgebra: norm
 using NNlib: softmax
 
-"""
+#=
     gelu(x)
 
 Gaussian Error Linear Unit activation function.
-"""
+=#
 function gelu(x::Float32)
     return 0.5f0 * x * (1.0f0 + tanh(sqrt(2.0f0 / π) * (x + 0.044715f0 * x^3)))
 end
 
-"""
+#=
     feed_forward(x, d_ff)
 
 Feed-forward neural network used in transformers.
-"""
+=#
 function feed_forward(x::Matrix{Float32}, d_ff::Int)
     d_model, seq_len = size(x)
     W1 = randn(Float32, d_ff, d_model)
@@ -31,11 +31,11 @@ function feed_forward(x::Matrix{Float32}, d_ff::Int)
     return W2 * hidden .+ b2
 end
 
-"""
+#=
     multi_head_attention(Q, K, V, n_heads)
 
 Multi-head scaled dot-product attention mechanism.
-"""
+=#
 function multi_head_attention(Q::Matrix{Float32}, K::Matrix{Float32}, V::Matrix{Float32}, n_heads::Int)
     d_model, seq_len = size(Q)
     d_k = d_model ÷ n_heads
@@ -51,34 +51,36 @@ function multi_head_attention(Q::Matrix{Float32}, K::Matrix{Float32}, V::Matrix{
     return output
 end
 
-"""
+#=
     layer_norm(x)
 
 Layer normalization.
-"""
+=#
 function layer_norm(x::Matrix{Float32})
     mean_x = mean(x; dims=1)
     std_x = std(x; dims=1)
     return (x .- mean_x) ./ (std_x .+ 1f-6)
 end
 
-"""
+#=
     positional_encoding(max_len, d_model)
 
 Generates sinusoidal positional encodings.
-"""
+=#
 function positional_encoding(max_len::Int, d_model::Int)
     pos = collect(0:max_len-1)
-    i = collect(0:d_model-1)
-    angle_rates = 1f0 ./ (10000f0 .^ ((2i) ./ d_model))
-    angle_rads = pos' * angle_rates
-
-    sines = sin.(angle_rads[:, 1:2:end])
-    cosines = cos.(angle_rads[:, 2:2:end])
-
+    i = collect(0:2:d_model-1)  # Even indices only: 0, 2, 4, ...
+    
+    # Create angle rates for even positions
+    angle_rates = 1f0 ./ (10000f0 .^ (i ./ d_model))
+    
+    # Calculate angle radians
+    angle_rads = pos * angle_rates'  # Results in (max_len, d_model/2)
+    
+    # Create encoding matrix
     encoding = zeros(Float32, max_len, d_model)
-    encoding[:, 1:2:end] = sines
-    encoding[:, 2:2:end] = cosines
-
+    encoding[:, 1:2:end] = sin.(angle_rads)  # Odd indices (1, 3, 5, ...)
+    encoding[:, 2:2:end] = cos.(angle_rads)  # Even indices (2, 4, 6, ...)
+    
     return permutedims(encoding, [2, 1])  # (d_model, max_len)
 end
