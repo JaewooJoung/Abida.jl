@@ -1,25 +1,29 @@
 # core.jl
+
 using DuckDB
 using Logging
 using JLD2
 
 include("types.jl")
-include("utils.jl")
+include("transformer_utils.jl")
+include("database.jl")
 
-# Constructor
 function AGI(db_path::String="Abida.duckdb", config::TransformerConfig=DEFAULT_CONFIG)
     try
         conn = DBInterface.connect(DuckDB.DB, db_path)
         init_database(conn)
 
-        # Load existing data
-        documents, vocab, doc_embeddings, word_embeddings = load_data(conn, config)
+        documents, vocab_dict, doc_embeddings, word_embeddings_matrix = load_data(conn, config)
+        vocab = Vocabulary(vocab_dict, ["" for _ in 1:length(vocab_dict)])
+        for (word, idx) in vocab_dict
+            vocab.idx_to_word[idx] = word
+        end
 
         positional_enc = positional_encoding(config.max_seq_length, config.d_model)
 
         AGI(
-            Vocabulary(vocab),
-            WordEmbeddings(word_embeddings),
+            vocab,
+            WordEmbeddings(word_embeddings_matrix),
             PositionalEncoding(positional_enc),
             DocumentStore(documents, doc_embeddings),
             config,
@@ -31,10 +35,8 @@ function AGI(db_path::String="Abida.duckdb", config::TransformerConfig=DEFAULT_C
     end
 end
 
-# Helper function for vector normalization
 normalize(v::Vector{Float32}) = v / (norm(v) + eps(Float32))
 
-# Helper function to wrap database transactions
 function with_transaction(f, conn)
     DBInterface.execute(conn, "BEGIN TRANSACTION")
     try
@@ -47,11 +49,9 @@ function with_transaction(f, conn)
     end
 end
 
-# Tokenize and encode text into embeddings
 function encode_text(ai::AGI, text::String)
     words = split(lowercase(text))
     seq_length = min(length(words), ai.config.max_seq_length)
-
     embeddings = zeros(Float32, ai.config.d_model, seq_length)
 
     for (i, word) in enumerate(words[1:seq_length])
@@ -67,29 +67,20 @@ function encode_text(ai::AGI, text::String)
     return embeddings
 end
 
-# Apply transformer encoding to embeddings
 function transformer_encode(ai::AGI, embeddings::Matrix{Float32})
-    # Multi-head attention
     attn_output = multi_head_attention(embeddings, embeddings, embeddings, ai.config.n_head)
-
-    # Add & Norm
     attn_output = attn_output + embeddings
     attn_output = layer_norm(attn_output)
 
-    # Feed-forward network
     ff_output = feed_forward(attn_output, ai.config.d_ff)
-
-    # Add & Norm
     ff_output = ff_output + attn_output
     ff_output = layer_norm(ff_output)
 
     return vec(mean(ff_output, dims=2))
 end
 
-# Add new text to knowledge base
 function learn!(ai::AGI, text::String)
     push!(ai.docs.documents, text)
-
     words = split(lowercase(text))
     vocab_changed = false
 
@@ -98,7 +89,6 @@ function learn!(ai::AGI, text::String)
             vocab_changed = true
             ai.vocab.word_to_idx[word] = length(ai.vocab.idx_to_word) + 1
             push!(ai.vocab.idx_to_word, word)
-
             DBInterface.execute(ai.conn, """
                 INSERT INTO vocabulary (word, index) VALUES (?, ?)
             """, (word, ai.vocab.word_to_idx[word]))
@@ -106,24 +96,19 @@ function learn!(ai::AGI, text::String)
     end
 
     vocab_size = length(ai.vocab.idx_to_word)
-
-    # Grow word embeddings if needed
-    if vocab_changed || size(ai.word_embeddings.matrix, 2) < vocab_size
-        old_size = size(ai.word_embeddings.matrix, 2)
+    old_size = size(ai.word_embeddings.matrix, 2)
+    if vocab_changed || old_size < vocab_size
         new_cols = vocab_size - old_size
         new_init = randn(Float32, ai.config.d_model, new_cols)
         ai.word_embeddings.matrix = hcat(ai.word_embeddings.matrix, new_init)
-
-        batch_insert_embeddings(ai.conn, new_init, old_size + 1 : vocab_size)
+        batch_insert_word_embeddings(ai.conn, new_init, ai.vocab.word_to_idx)
     end
 
-    # Encode document
     embeddings = encode_text(ai, text)
-    doc_embedding = transformer_encode(ai, embeddings)
-    push!(ai.docs.embeddings, normalize(doc_embedding))
+    doc_embedding = normalize(transformer_encode(ai, embeddings))
+    push!(ai.docs.embeddings, doc_embedding)
 
     next_id = first(first(DBInterface.execute(ai.conn, "SELECT COALESCE(MAX(id), 0) + 1 FROM documents")))
-
     with_transaction(ai.conn) do
         DBInterface.execute(ai.conn, """
             INSERT INTO documents (id, content) VALUES (?, ?)
@@ -131,25 +116,12 @@ function learn!(ai::AGI, text::String)
 
         vector_doubles = convert(Vector{Float64}, doc_embedding)
         vector_list = "ARRAY[" * join(string.(vector_doubles), ",") * "]::DOUBLE[]"
-
         DBInterface.execute(ai.conn, """
             INSERT INTO embeddings (doc_id, vector) VALUES (?, $vector_list)
         """, (next_id,))
     end
 end
 
-function batch_insert_embeddings(conn, embeddings, indices)
-    data = [(idx, vec) for (idx, vec) in zip(indices, eachcol(embeddings))]
-    words = [ai.vocab.idx_to_word[idx] for idx in indices]
-    values = [(w, i, vec) for ((i, vec), w) in zip(data, words)]
-    DBInterface.execute(conn, """
-        INSERT INTO word_embeddings (word, vocab_index, vector)
-        SELECT *
-        FROM UNNEST (?, ?, ?::DOUBLE[][])
-    """, (words, collect(indices), getindex.(data, 2)))
-end
-
-# Find most relevant response to question
 function answer(ai::AGI, question::String)
     isempty(ai.docs.embeddings) && return "No knowledge yet."
 
@@ -159,58 +131,6 @@ function answer(ai::AGI, question::String)
     return ai.docs.documents[best_idx]
 end
 
-# Initialize database schema
-function init_database(conn)
-    DBInterface.execute(conn, """
-        CREATE TABLE IF NOT EXISTS vocabulary (
-            word VARCHAR PRIMARY KEY,
-            index INTEGER
-        );
-    """)
-    DBInterface.execute(conn, """
-        CREATE TABLE IF NOT EXISTS documents (
-            id INTEGER PRIMARY KEY,
-            content TEXT
-        );
-    """)
-    DBInterface.execute(conn, """
-        CREATE TABLE IF NOT EXISTS embeddings (
-            doc_id INTEGER PRIMARY KEY,
-            vector DOUBLE[]
-        );
-    """)
-    DBInterface.execute(conn, """
-        CREATE TABLE IF NOT EXISTS word_embeddings (
-            word VARCHAR,
-            vocab_index INTEGER PRIMARY KEY,
-            vector DOUBLE[]
-        );
-    """)
-end
-
-# Load data from database
-function load_data(conn, config)
-    vocab_result = DBInterface.execute(conn, "SELECT word, index FROM vocabulary")
-    vocab_dict = Dict{String, Int}()
-    vocab_list = String[]
-    for row in vocab_result
-        vocab_dict[row.word] = row.index
-        vocab_list = push!(vocab_list, row.word)
-    end
-
-    doc_result = DBInterface.execute(conn, "SELECT content FROM documents")
-    documents = [row.content for row in doc_result]
-
-    embed_result = DBInterface.execute(conn, "SELECT vector FROM embeddings")
-    doc_embeddings = [vec(Float32.(e.vector)) for e in embed_result]
-
-    we_result = DBInterface.execute(conn, "SELECT vector FROM word_embeddings ORDER BY vocab_index")
-    word_embeddings = hcat([Float32.(v.vector) for v in we_result]...)
-
-    return documents, vocab_dict, doc_embeddings, word_embeddings
-end
-
-# Save/load model state
 function save(ai::AGI, path::String)
     jldsave(path;
         vocab_idx_to_word=ai.vocab.idx_to_word,
@@ -226,14 +146,16 @@ function load(path::String, config::TransformerConfig, db_path::String)
     data = jldopen(path, "r")
     vocab_words = data["vocab_idx_to_word"]
     vocab_indices = data["vocab_word_to_idx"]
+
     vocab = Vocabulary()
     for (word, idx) in vocab_indices
         vocab.word_to_idx[word] = idx
-        vocab.idx_to_word = vocab_words
     end
-    close(data)
+    vocab.idx_to_word = vocab_words
 
+    close(data)
     conn = DBInterface.connect(DuckDB.DB, db_path)
+
     AGI(
         vocab,
         WordEmbeddings(data["word_embeddings"]),
@@ -243,3 +165,12 @@ function load(path::String, config::TransformerConfig, db_path::String)
         conn
     )
 end
+
+# Placeholder stubs for exported functions
+cleanup!(ai::AGI) = @warn "Not implemented"
+reset_knowledge!(ai::AGI) = @warn "Not implemented"
+rethink!(ai::AGI, text::String) = @warn "Not implemented"
+reiterate!(ai::AGI, text::String) = @warn "Not implemented"
+lookforword(ai::AGI, word::String) = @warn "Not implemented"
+evaluate(ai::AGI, text::String) = @warn "Not implemented"
+answer_with_fallback(ai::AGI, question::String, fallback::String) = answer(ai, question)
