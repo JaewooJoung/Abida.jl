@@ -15,6 +15,7 @@ SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 TextAnalysis = "a2db99b7-8b79-58f8-94bf-bbc811eef33d"
 Unicode = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
+Transformers = "3783bf0b-c14d-4a3d-bb97-6c80e65b4a11"
 
 [compat]
 julia = "1.11"
