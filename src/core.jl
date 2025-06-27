@@ -275,7 +275,7 @@ end
 Saves AGI state to disk.
 =#
 function save(ai::AGI, path::String)
-    jldopen(path, "w") do file
+    JLD2.jldopen(path, "w") do file
         write(file, "vocab_idx_to_word", ai.vocab.idx_to_word)
         write(file, "vocab_word_to_idx", ai.vocab.word_to_idx)
         write(file, "word_embeddings", ai.word_embeddings.matrix)
@@ -291,7 +291,7 @@ end
 Loads AGI state from disk.
 =#
 function load(path::String, config::TransformerConfig, db_path::String)
-    data = jldopen(path, "r")
+    data = JLD2.jldopen(path, "r")
     vocab_words = read(data, "vocab_idx_to_word", Vector{String})
     vocab_indices = read(data, "vocab_word_to_idx", Dict{String, Int})
 
