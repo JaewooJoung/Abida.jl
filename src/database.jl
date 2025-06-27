@@ -2,8 +2,8 @@
 
 using DuckDB
 
-function init_database(conn::DuckDB.DB)
-    DBInterface.execute(conn, """
+function init_database(db::Union{DuckDB.DB, DuckDB.Connection})
+    DBInterface.execute(db, """
         CREATE TABLE IF NOT EXISTS documents (
             id INTEGER PRIMARY KEY,
             content TEXT NOT NULL
