@@ -17,7 +17,10 @@ Constructs an AGI instance by loading data from disk/database.
 =#
 function AGI(db_path::String="Abida.duckdb", config::TransformerConfig=DEFAULT_CONFIG)
     try
-        conn = DBInterface.connect(DuckDB.DB, db_path)
+        # Create DB instance and get connection
+        db = DuckDB.DB(db_path)
+        conn = DuckDB.connect(db)  # Explicitly create connection
+        
         init_database(conn)
 
         documents, vocab_dict, doc_embeddings, word_embeddings_matrix = load_data(conn, config)
@@ -35,7 +38,7 @@ function AGI(db_path::String="Abida.duckdb", config::TransformerConfig=DEFAULT_C
             PositionalEncoding(positional_enc),
             DocumentStore(documents, doc_embeddings),
             config,
-            conn
+            conn  # Now passing the connection, not the DB
         )
     catch e
         @error "Failed to initialize AGI" exception=e
