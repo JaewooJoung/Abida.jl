@@ -60,12 +60,12 @@ function init_database(db::Union{DuckDB.DB, DuckDB.Connection})
     """)
 end
 
-function load_data(conn::DuckDB.DB, config::TransformerConfig)
+function load_data(db::Union{DuckDB.DB, DuckDB.Connection}, config::TransformerConfig)
     documents = String[]
     vocab = Dict{String,Int}()
     doc_embeddings = Vector{Float32}[]
     
-    result = DBInterface.execute(conn, "SELECT content FROM documents ORDER BY id")
+    result = DBInterface.execute(db, "SELECT content FROM documents ORDER BY id")
     for row in result
         push!(documents, row.content)
     end
