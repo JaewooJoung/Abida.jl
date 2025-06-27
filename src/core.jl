@@ -304,8 +304,9 @@ function load(path::String, config::TransformerConfig, db_path::String)
         vocab.idx_to_word = vocab_words
     end
 
-    close(data)
-    conn = DBInterface.connect(DuckDB.DB, db_path)
+    # Create DB instance and get connection
+    db = DuckDB.DB(db_path)
+    conn = DuckDB.connect(db)
 
     AGI(
         vocab,
@@ -313,6 +314,6 @@ function load(path::String, config::TransformerConfig, db_path::String)
         PositionalEncoding(read(data, "positional_enc", Matrix{Float32})),
         DocumentStore(read(data, "documents", Vector{String}), read(data, "doc_embeddings", Vector{Vector{Float32}})),
         config,
-        conn
+        conn  # Pass connection instead of DB
     )
 end
