@@ -1,26 +1,21 @@
-# Abida.jl - Modular AGI System with Transformer & DuckDB Backend
+# src/Abida.jl
 module Abida
 
 using LinearAlgebra
-using StatsBase
+using Statistics
+using DuckDB
+using Transformers
 using TextAnalysis
 using Languages
 using SparseArrays
-using DuckDB
-using LogExpFunctions: logsumexp
-using Statistics: mean, std
-using Printf: @sprintf
 using Embeddings
-using Transformers
 using Logging
 
-# Public API
-export AGI, learn!, answer, cleanup!, reset_knowledge!, encode_text, rethink!, reiterate!, lookforword, evaluate, answer_with_fallback
+export AGI, learn!, answer, cleanup!, reset_knowledge!
 
-# Internal includes
 include("types.jl")
-include("transformer_utils.jl")  # renamed from transformer.txt
+include("transformer_utils.jl")  # previously utils.jl
 include("database.jl")
 include("core.jl")
 
-end # module Abida
+end # module
