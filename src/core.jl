@@ -2,7 +2,7 @@
 
 using DuckDB
 using Logging
-using JLDArchives
+using JLD2
 
 
 # Internal includes
