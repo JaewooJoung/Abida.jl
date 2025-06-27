@@ -4,16 +4,23 @@ using DuckDB
 using Logging
 using JLD2
 
+# Internal includes
 include("types.jl")
-include("transformer_utils.jl")
+include("transformer_utils.jl")  # renamed from transformer.txt
 include("database.jl")
 
+#=
+    AGI(db_path="Abida.duckdb", config=DEFAULT_CONFIG)
+
+Constructs an AGI instance by loading data from disk/database.
+=#
 function AGI(db_path::String="Abida.duckdb", config::TransformerConfig=DEFAULT_CONFIG)
     try
         conn = DBInterface.connect(DuckDB.DB, db_path)
         init_database(conn)
 
         documents, vocab_dict, doc_embeddings, word_embeddings_matrix = load_data(conn, config)
+
         vocab = Vocabulary(vocab_dict, ["" for _ in 1:length(vocab_dict)])
         for (word, idx) in vocab_dict
             vocab.idx_to_word[idx] = word
@@ -35,8 +42,18 @@ function AGI(db_path::String="Abida.duckdb", config::TransformerConfig=DEFAULT_C
     end
 end
 
+#=
+    normalize(v)
+
+Normalizes a vector.
+=#
 normalize(v::Vector{Float32}) = v / (norm(v) + eps(Float32))
 
+#=
+    with_transaction(f, conn)
+
+Runs a function inside a database transaction.
+=#
 function with_transaction(f, conn)
     DBInterface.execute(conn, "BEGIN TRANSACTION")
     try
@@ -49,6 +66,11 @@ function with_transaction(f, conn)
     end
 end
 
+#=
+    encode_text(ai, text)
+
+Encodes input text into embeddings.
+=#
 function encode_text(ai::AGI, text::String)
     words = split(lowercase(text))
     seq_length = min(length(words), ai.config.max_seq_length)
@@ -67,18 +89,34 @@ function encode_text(ai::AGI, text::String)
     return embeddings
 end
 
+#=
+    transformer_encode(ai, embeddings)
+
+Applies transformer layers to embeddings.
+=#
 function transformer_encode(ai::AGI, embeddings::Matrix{Float32})
+    # Multi-head attention
     attn_output = multi_head_attention(embeddings, embeddings, embeddings, ai.config.n_head)
+
+    # Add & Norm
     attn_output = attn_output + embeddings
     attn_output = layer_norm(attn_output)
 
+    # Feed-forward network
     ff_output = feed_forward(attn_output, ai.config.d_ff)
+
+    # Add & Norm
     ff_output = ff_output + attn_output
     ff_output = layer_norm(ff_output)
 
     return vec(mean(ff_output, dims=2))
 end
 
+#=
+    learn!(ai, text)
+
+Adds new text to the knowledge base.
+=#
 function learn!(ai::AGI, text::String)
     push!(ai.docs.documents, text)
     words = split(lowercase(text))
@@ -122,15 +160,119 @@ function learn!(ai::AGI, text::String)
     end
 end
 
+#=
+    answer(ai, question)
+
+Finds the most relevant document to the given question and returns response, confidence, best_doc
+=#
 function answer(ai::AGI, question::String)
-    isempty(ai.docs.embeddings) && return "No knowledge yet."
+    isempty(ai.docs.embeddings) && return ("No knowledge yet.", 0.0f0, "")
 
     q_embedding = normalize(transformer_encode(ai, encode_text(ai, question)))
     scores = [dot(q_embedding, emb) for emb in ai.docs.embeddings]
     best_idx = argmax(scores)
-    return ai.docs.documents[best_idx]
+    score = scores[best_idx]
+    return (ai.docs.documents[best_idx], Float32(score), ai.docs.documents[best_idx])
 end
 
+#=
+    reset_knowledge!(ai)
+
+Clears all learned knowledge from the database and resets internal state.
+=#
+function reset_knowledge!(ai::AGI)
+    DBInterface.execute(ai.conn, "DELETE FROM documents")
+    DBInterface.execute(ai.conn, "DELETE FROM vocabulary")
+    DBInterface.execute(ai.conn, "DELETE FROM embeddings")
+    DBInterface.execute(ai.conn, "DELETE FROM word_embeddings")
+
+    ai.docs.documents = String[]
+    ai.docs.embeddings = Vector{Float32}[]
+    ai.vocab.word_to_idx = Dict()
+    ai.vocab.idx_to_word = String[]
+    ai.word_embeddings.matrix = zeros(Float32, ai.config.d_model, 1)
+end
+
+#=
+    rethink!(ai, prompt)
+
+Analyzes relationships between sentences based on similarity.
+=#
+function rethink!(ai::AGI, prompt::String)
+    DBInterface.execute(ai.conn, "BEGIN TRANSACTION")
+    try
+        doc_ids = collect(1:length(ai.docs.documents))
+        for i in 1:length(doc_ids)-1
+            for j in i+1:length(doc_ids)
+                sim = dot(ai.docs.embeddings[i], ai.docs.embeddings[j]) / (
+                    norm(ai.docs.embeddings[i]) * norm(ai.docs.embeddings[j])
+                )
+                DBInterface.execute(ai.conn, """
+                    INSERT INTO sentence_relationships (sentence_id_1, sentence_id_2, strength)
+                    VALUES (?, ?, ?)
+                """, (doc_ids[i], doc_ids[j], Float64(sim)))
+            end
+        end
+        DBInterface.execute(ai.conn, "COMMIT")
+    catch e
+        DBInterface.execute(ai.conn, "ROLLBACK")
+        rethrow(e)
+    end
+end
+
+#=
+    reiterate!(ai)
+
+Re-encodes all stored documents to update their embeddings.
+=#
+function reiterate!(ai::AGI)
+    ai.docs.embeddings = [transformer_encode(ai, encode_text(ai, text)) for text in ai.docs.documents]
+end
+
+#=
+    lookforword(ai, word)
+
+Searches for documents containing the given word.
+=#
+function lookforword(ai::AGI, word::String)
+    results = String[]
+    word_lower = lowercase(word)
+    for doc in ai.docs.documents
+        if occursin(word_lower, lowercase(doc))
+            push!(results, doc)
+        end
+    end
+    return results
+end
+
+#=
+    answer_with_fallback(ai, question, fallback)
+
+Returns fallback if no confident match is found.
+=#
+function answer_with_fallback(ai::AGI, question::String, fallback="I don't know.")
+    isempty(ai.docs.embeddings) && return fallback
+    q_embedding = normalize(transformer_encode(ai, encode_text(ai, question)))
+    scores = [dot(q_embedding, emb) for emb in ai.docs.embeddings]
+    best_idx = argmax(scores)
+    score = scores[best_idx]
+    return score > 0.1 ? ai.docs.documents[best_idx] : fallback
+end
+
+#=
+    cleanup!(ai)
+
+Cleans up resources (e.g., closes database connection).
+=#
+function cleanup!(ai::AGI)
+    close(ai.conn)
+end
+
+#=
+    save(ai, path)
+
+Saves AGI state to disk.
+=#
 function save(ai::AGI, path::String)
     jldsave(path;
         vocab_idx_to_word=ai.vocab.idx_to_word,
@@ -142,6 +284,11 @@ function save(ai::AGI, path::String)
     )
 end
 
+#=
+    load(path, config, db_path)
+
+Loads AGI state from disk.
+=#
 function load(path::String, config::TransformerConfig, db_path::String)
     data = jldopen(path, "r")
     vocab_words = data["vocab_idx_to_word"]
@@ -165,12 +312,3 @@ function load(path::String, config::TransformerConfig, db_path::String)
         conn
     )
 end
-
-# Placeholder stubs for exported functions
-cleanup!(ai::AGI) = @warn "Not implemented"
-reset_knowledge!(ai::AGI) = @warn "Not implemented"
-rethink!(ai::AGI, text::String) = @warn "Not implemented"
-reiterate!(ai::AGI, text::String) = @warn "Not implemented"
-lookforword(ai::AGI, word::String) = @warn "Not implemented"
-evaluate(ai::AGI, text::String) = @warn "Not implemented"
-answer_with_fallback(ai::AGI, question::String, fallback::String) = answer(ai, question)
