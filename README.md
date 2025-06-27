@@ -35,4 +35,4 @@ graph TD;
 ## how to use it ? 
 clone it and run the module and run the example , simple as that
 OR
-] add https://github.com/JaewooJoung/Abida.jl 
+>] add https://github.com/JaewooJoung/Abida.jl 
