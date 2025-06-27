@@ -1,38 +1,48 @@
+# Autonomous.jl
 using Abida
 using HTTP
 using Gumbo
 using Cascadia
 using Dates
+using URIs
+using Logging
+using InteractiveUtils
+
+# Set up logging
+global_logger(ConsoleLogger(stderr, Logging.Info))
 
 # Function to fetch and parse a Wikipedia page
 function fetch_wikipedia_page(title::String)
-    url = "https://en.wikipedia.org/wiki/$title"
-    response = HTTP.get(url)
+    encoded_title = replace(title, " " => "_")
+    encoded_title = URI.encode(encoded_title)
+    url = "https://en.wikipedia.org/wiki/ $encoded_title"
+    headers = ["User-Agent" => "Julia-AutonomousStudyBot/1.0"]
+    
+    @info "Fetching Wikipedia page" url=url
+    response = HTTP.get(url; headers=headers, redirect=true)
+    
     if response.status != 200
         error("Failed to fetch Wikipedia page: $(response.status)")
     end
-    html = String(response.body)
-    return html
+    
+    return String(response.body)
 end
 
 # Function to extract text from Wikipedia HTML
 function extract_wikipedia_text(html::String)
     doc = parsehtml(html)
-    body = doc.root[2]  # The <body> tag is the second child of the root
-    text_nodes = eachmatch(Selector("p"), body)  # Select all <p> tags
-    text = join([node.text for node in text_nodes], "\n")
+    paras = eachmatch(Selector("div.mw-parser-output > p"), doc.root)
+    text = join([text(x) for x in paras], "\n")
     return text
 end
 
 # Function to clean and split text into sentences
 function clean_and_split_text(text::String)
-    # Clean the text
-    cleaned = replace(text, r"\r\n|\r|\n" => " ")  # Replace line breaks
-    cleaned = replace(cleaned, r"\s+" => " ")      # Normalize whitespace
-    cleaned = strip(cleaned)                       # Remove leading/trailing whitespace
+    cleaned = replace(text, r"\r\n|\r|\n" => " ")
+    cleaned = replace(cleaned, r"\s+" => " ")
+    cleaned = strip(cleaned)
     
-    # Split into sentences and filter valid ones
-    sentences = split(cleaned, r"(?<=[.!?])\s+|(?<=[.!?])$")
+    sentences = split(cleaned, r"(?<=[.!?])\s+")
     valid_sentences = filter(s -> length(strip(s)) >= 20, sentences)
     
     return valid_sentences
@@ -40,36 +50,58 @@ end
 
 # Function to learn from a Wikipedia page
 function learn_from_wikipedia(ai::AGI, title::String)
-    println("Fetching Wikipedia page: $title")
     html = fetch_wikipedia_page(title)
     text = extract_wikipedia_text(html)
     sentences = clean_and_split_text(text)
-    
-    println("Learning from Wikipedia page: $title")
-    for sentence in sentences
-        learn!(ai, sentence)
+
+    @info "Learning from Wikipedia page" title=title count=length(sentences)
+    DBInterface.execute(ai.conn, "BEGIN TRANSACTION")
+    try
+        for sentence in sentences
+            learn!(ai, sentence)
+        end
+        DBInterface.execute(ai.conn, "COMMIT")
+    catch e
+        DBInterface.execute(ai.conn, "ROLLBACK")
+        rethrow()
     end
-    println("Finished learning from Wikipedia page: $title")
 end
 
 # Function to autonomously study from a list of Wikipedia pages
 function autonomous_study(ai::AGI, topics::Vector{String}, interval::Second)
-    println("Starting autonomous study...")
-    while true
-        for topic in topics
-            try
-                learn_from_wikipedia(ai, topic)
-                println("Sleeping for $(interval.value) seconds...")
-                sleep(interval.value)
-            catch e
-                @error "Error learning from topic $topic" exception=e
+    @info "Starting autonomous study..." topics=topics
+    counter = 0
+    try
+        while true
+            for topic in topics
+                try
+                    learn_from_wikipedia(ai, topic)
+                    counter += 1
+                    
+                    # Save periodically
+                    if counter % 5 == 0
+                        save_path = "agi_state_$(now(:local)).jld2"
+                        save(ai, save_path)
+                        @info "Saved AGI state" path=save_path
+                    end
+                    
+                    sleep(rand(5:15))  # Avoid rate limiting
+                catch e
+                    @error "Error processing topic" topic=topic exception=e
+                end
             end
+            @info "Sleeping before next cycle" seconds=interval.value
+            sleep(interval.value)
         end
+    catch e
+        isa(e, InterruptException) || rethrow()
+        @info "Autonomous study interrupted by user"
     end
 end
 
 # Main execution
 db_path = "autonomous_knowledge.duckdb"
+@info "Initializing AGI" db=db_path
 ai = AGI(db_path)
 
 # List of topics to study
@@ -82,4 +114,9 @@ topics = [
 ]
 
 # Start autonomous study (e.g., study each topic every 10 minutes)
+@info "Starting autonomous learning loop"
 autonomous_study(ai, topics, Second(600))  # 600 seconds = 10 minutes
+
+# Cleanup
+@info "Cleaning up"
+cleanup!(ai)
