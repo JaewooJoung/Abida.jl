@@ -15,14 +15,17 @@ include("database.jl")
 
 Constructs an AGI instance by loading data from disk/database.
 =#
+# core.jl
 function AGI(db_path::String="Abida.duckdb", config::TransformerConfig=DEFAULT_CONFIG)
     try
-        # Create DB instance and get connection
+        # Create database and connection
         db = DuckDB.DB(db_path)
-        conn = DuckDB.connect(db)  # Explicitly create connection
+        conn = DuckDB.connect(db)
         
-        init_database(conn)
+        # Initialize database using the DB object
+        init_database(db)
 
+        # Load data using the connection
         documents, vocab_dict, doc_embeddings, word_embeddings_matrix = load_data(conn, config)
 
         vocab = Vocabulary(vocab_dict, ["" for _ in 1:length(vocab_dict)])
@@ -38,7 +41,7 @@ function AGI(db_path::String="Abida.duckdb", config::TransformerConfig=DEFAULT_C
             PositionalEncoding(positional_enc),
             DocumentStore(documents, doc_embeddings),
             config,
-            conn  # Now passing the connection, not the DB
+            conn  # Store the connection in the struct
         )
     catch e
         @error "Failed to initialize AGI" exception=e
