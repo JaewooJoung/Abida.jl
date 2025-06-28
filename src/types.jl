@@ -17,7 +17,8 @@ end
 
 Vocabulary() = Vocabulary(Dict(), String[])
 
-struct WordEmbeddings
+# Make WordEmbeddings mutable so we can update the matrix
+mutable struct WordEmbeddings
     matrix::Matrix{Float32}
 end
 
@@ -25,7 +26,8 @@ struct PositionalEncoding
     matrix::Matrix{Float32}
 end
 
-struct DocumentStore
+# Make DocumentStore mutable so we can add documents and embeddings
+mutable struct DocumentStore
     documents::Vector{String}
     embeddings::Vector{Vector{Float32}}
 end
