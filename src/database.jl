@@ -1,4 +1,4 @@
-# database.jl - Using proper DuckDB sequences
+# database.jl - Simplified schema with sequences but explicit nextval() usage
 
 function init_database(db::DuckDB.DB)
     # Create sequences first
@@ -8,7 +8,7 @@ function init_database(db::DuckDB.DB)
     
     DBInterface.execute(db, """
         CREATE TABLE IF NOT EXISTS documents (
-            id INTEGER PRIMARY KEY DEFAULT nextval('doc_id_seq'),
+            id INTEGER PRIMARY KEY,
             content TEXT NOT NULL
         )
     """)
@@ -39,7 +39,7 @@ function init_database(db::DuckDB.DB)
     """)
     DBInterface.execute(db, """
         CREATE TABLE IF NOT EXISTS feedback (
-            id INTEGER PRIMARY KEY DEFAULT nextval('feedback_id_seq'),
+            id INTEGER PRIMARY KEY,
             question TEXT NOT NULL,
             feedback TEXT NOT NULL
         )
@@ -55,7 +55,7 @@ function init_database(db::DuckDB.DB)
     """)
     DBInterface.execute(db, """
         CREATE TABLE IF NOT EXISTS interactions (
-            id INTEGER PRIMARY KEY DEFAULT nextval('interaction_id_seq'),
+            id INTEGER PRIMARY KEY,
             question TEXT,
             answer TEXT,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -71,7 +71,7 @@ function init_database(conn::DuckDB.Connection)
     
     DBInterface.execute(conn, """
         CREATE TABLE IF NOT EXISTS documents (
-            id INTEGER PRIMARY KEY DEFAULT nextval('doc_id_seq'),
+            id INTEGER PRIMARY KEY,
             content TEXT NOT NULL
         )
     """)
@@ -102,7 +102,7 @@ function init_database(conn::DuckDB.Connection)
     """)
     DBInterface.execute(conn, """
         CREATE TABLE IF NOT EXISTS feedback (
-            id INTEGER PRIMARY KEY DEFAULT nextval('feedback_id_seq'),
+            id INTEGER PRIMARY KEY,
             question TEXT NOT NULL,
             feedback TEXT NOT NULL
         )
@@ -118,7 +118,7 @@ function init_database(conn::DuckDB.Connection)
     """)
     DBInterface.execute(conn, """
         CREATE TABLE IF NOT EXISTS interactions (
-            id INTEGER PRIMARY KEY DEFAULT nextval('interaction_id_seq'),
+            id INTEGER PRIMARY KEY,
             question TEXT,
             answer TEXT,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
