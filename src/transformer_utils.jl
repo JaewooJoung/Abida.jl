@@ -35,34 +35,48 @@ end
     multi_head_attention(Q, K, V, n_heads)
 
 Multi-head scaled dot-product attention mechanism.
+Fixed version that handles matrix dimensions correctly.
 =#
 function multi_head_attention(Q::Matrix{Float32}, K::Matrix{Float32}, V::Matrix{Float32}, n_heads::Int)
     d_model, seq_len = size(Q)
     d_k = d_model ÷ n_heads
-
-    # Reshape to (d_k, n_heads, seq_len)
-    Q_reshaped = reshape(Q, (d_k, n_heads, seq_len))
-    K_reshaped = reshape(K, (d_k, n_heads, seq_len))
-    V_reshaped = reshape(V, (d_k, n_heads, seq_len))
-
-    # Compute attention scores (more numerically stable version)
-    scores = zeros(Float32, seq_len, seq_len, n_heads)
-    for h in 1:n_heads
-        Q_head = view(Q_reshaped, :, h, :)
-        K_head = view(K_reshaped, :, h, :)
-        scores[:, :, h] = (Q_head' * K_head) ./ sqrt(d_k)
+    
+    # Ensure d_k is valid
+    if d_k == 0
+        d_k = 1
+        n_heads = d_model
     end
-
-    # Apply softmax
-    attn_weights = softmax(scores; dims=2)
-
-    # Compute output
+    
+    # Initialize output
     output = zeros(Float32, d_model, seq_len)
+    
+    # Process each head
     for h in 1:n_heads
-        V_head = view(V_reshaped, :, h, :)
-        output += reshape(attn_weights[:, :, h] * V_head', d_model, seq_len)
+        # Extract head dimensions
+        start_dim = (h-1) * d_k + 1
+        end_dim = min(h * d_k, d_model)
+        
+        if start_dim <= d_model && end_dim <= d_model
+            # Extract Q, K, V for this head
+            Q_h = Q[start_dim:end_dim, :]  # (d_k, seq_len)
+            K_h = K[start_dim:end_dim, :]  # (d_k, seq_len)
+            V_h = V[start_dim:end_dim, :]  # (d_k, seq_len)
+            
+            # Compute attention scores: Q_h^T * K_h
+            scores = transpose(Q_h) * K_h  # (seq_len, seq_len)
+            scores = scores / sqrt(Float32(d_k))
+            
+            # Apply softmax
+            attn_weights = softmax(scores, dims=2)  # (seq_len, seq_len)
+            
+            # Apply attention to values: V_h * attn_weights^T
+            head_output = V_h * transpose(attn_weights)  # (d_k, seq_len)
+            
+            # Place back in output
+            output[start_dim:end_dim, :] = head_output
+        end
     end
-
+    
     return output
 end
 
@@ -72,9 +86,10 @@ end
 Layer normalization.
 =#
 function layer_norm(x::Matrix{Float32})
+    ε = 1f-6
     mean_x = mean(x; dims=1)
-    std_x = std(x; dims=1)
-    return (x .- mean_x) ./ (std_x .+ 1f-6)
+    var_x = var(x; dims=1, mean=mean_x)
+    return (x .- mean_x) ./ sqrt.(var_x .+ ε)
 end
 
 #=
