@@ -214,13 +214,21 @@ end
 
 function reset_knowledge!(ai::AGI)
     try
-        # Delete in correct order to respect foreign key constraints
-        DBInterface.execute(ai.conn, "DELETE FROM sentence_relationships")
-        DBInterface.execute(ai.conn, "DELETE FROM embeddings")
-        DBInterface.execute(ai.conn, "DELETE FROM documents")
-        DBInterface.execute(ai.conn, "DELETE FROM word_embeddings")
-        DBInterface.execute(ai.conn, "DELETE FROM vocabulary")
+        # Manual cascade delete - delete in correct order to respect foreign key constraints
+        # First delete dependent tables, then parent tables
+        with_transaction(ai.conn) do
+            DBInterface.execute(ai.conn, "DELETE FROM sentence_relationships")
+            DBInterface.execute(ai.conn, "DELETE FROM embeddings")
+            DBInterface.execute(ai.conn, "DELETE FROM documents")
+            DBInterface.execute(ai.conn, "DELETE FROM word_embeddings")
+            DBInterface.execute(ai.conn, "DELETE FROM vocabulary")
+            DBInterface.execute(ai.conn, "DELETE FROM feedback")
+            DBInterface.execute(ai.conn, "DELETE FROM model_state")
+            # Note: interactions table doesn't reference others, so it's safe to leave or delete
+            DBInterface.execute(ai.conn, "DELETE FROM interactions")
+        end
 
+        # Reset in-memory state
         ai.docs.documents = String[]
         ai.docs.embeddings = Vector{Float32}[]
         ai.vocab.word_to_idx = Dict{String,Int}()
