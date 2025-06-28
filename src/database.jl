@@ -1,47 +1,47 @@
 # database.jl
 
-using DuckDB
+const DuckDBHandle = Union{DuckDB.DB, DuckDB.Connection}
 
-function init_database(db::Union{DuckDB.DB, DuckDB.Connection})
+function init_database(db::DuckDBHandle)
     DBInterface.execute(db, """
         CREATE TABLE IF NOT EXISTS documents (
             id INTEGER PRIMARY KEY,
             content TEXT NOT NULL
         )
     """)
-    DBInterface.execute(conn, """
+    DBInterface.execute(db, """
         CREATE TABLE IF NOT EXISTS vocabulary (
             word TEXT PRIMARY KEY,
             index INTEGER NOT NULL
         )
     """)
-    DBInterface.execute(conn, """
+    DBInterface.execute(db, """
         CREATE TABLE IF NOT EXISTS embeddings (
             doc_id INTEGER PRIMARY KEY,
             vector DOUBLE[] NOT NULL,
             FOREIGN KEY (doc_id) REFERENCES documents(id)
         )
     """)
-    DBInterface.execute(conn, """
+    DBInterface.execute(db, """
         CREATE TABLE IF NOT EXISTS word_embeddings (
             vocab_index INTEGER PRIMARY KEY,
             vector DOUBLE[] NOT NULL
         )
     """)
-    DBInterface.execute(conn, """
+    DBInterface.execute(db, """
         CREATE TABLE IF NOT EXISTS model_state (
             key TEXT PRIMARY KEY,
             value DOUBLE[] NOT NULL
         )
     """)
-    DBInterface.execute(conn, """
+    DBInterface.execute(db, """
         CREATE TABLE IF NOT EXISTS feedback (
             id INTEGER PRIMARY KEY,
             question TEXT NOT NULL,
             feedback TEXT NOT NULL
         )
     """)
-    DBInterface.execute(conn, """
+    DBInterface.execute(db, """
         CREATE TABLE IF NOT EXISTS sentence_relationships (
             sentence_id_1 INTEGER,
             sentence_id_2 INTEGER,
@@ -50,7 +50,7 @@ function init_database(db::Union{DuckDB.DB, DuckDB.Connection})
             FOREIGN KEY (sentence_id_2) REFERENCES documents(id)
         )
     """)
-    DBInterface.execute(conn, """
+    DBInterface.execute(db, """
         CREATE TABLE IF NOT EXISTS interactions (
             id INTEGER PRIMARY KEY,
             question TEXT,
@@ -60,7 +60,7 @@ function init_database(db::Union{DuckDB.DB, DuckDB.Connection})
     """)
 end
 
-function load_data(db::Union{DuckDB.DB, DuckDB.Connection}, config::TransformerConfig)
+function load_data(db::DuckDBHandle, config::TransformerConfig)
     documents = String[]
     vocab = Dict{String,Int}()
     doc_embeddings = Vector{Float32}[]
@@ -70,26 +70,27 @@ function load_data(db::Union{DuckDB.DB, DuckDB.Connection}, config::TransformerC
         push!(documents, row.content)
     end
 
-    result = DBInterface.execute(conn, "SELECT word, index FROM vocabulary")
+    result = DBInterface.execute(db, "SELECT word, index FROM vocabulary")
     for row in result
         vocab[row.word] = row.index
     end
 
-    result = DBInterface.execute(conn, "SELECT vector FROM embeddings ORDER BY doc_id")
+    result = DBInterface.execute(db, "SELECT vector FROM embeddings ORDER BY doc_id")
     for row in result
         push!(doc_embeddings, Float32.(collect(row.vector)))
     end
 
     word_embeddings = zeros(Float32, config.d_model, max(1, length(vocab)))
     if length(vocab) > 0
-        result = DBInterface.execute(conn, "SELECT vocab_index, vector FROM word_embeddings ORDER BY vocab_index")
+        result = DBInterface.execute(db, "SELECT vocab_index, vector FROM word_embeddings ORDER BY vocab_index")
         for row in result
-            word_embeddings[:, row.vocab_index] = Float32.(collect(row.vector))
+            word_embeddings[:, row.vocab_index] = Float32.(collect(row.vector)))
         end
     end
 
     return documents, vocab, doc_embeddings, word_embeddings
 end
+
 
 function batch_insert_vocabulary(conn::DuckDB.DB, vocab::Dict{String,Int})
     values = [(word, idx) for (word, idx) in vocab]
