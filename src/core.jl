@@ -373,3 +373,80 @@ function load(path::String, config::TransformerConfig, db_path::String)
         rethrow(e)
     end
 end
+
+function answer_with_keyword_fallback(ai::AGI, question::String, similarity_threshold::Float32=0.1f0)
+    """
+    Enhanced answer function with keyword-based fallback when similarity is low
+    """
+    if isempty(ai.docs.embeddings)
+        return ("No knowledge yet.", 0.0f0, "")
+    end
+
+    # First try embedding-based search
+    q_embedding = normalize(transformer_encode(ai, encode_text(ai, question)))
+    scores = [dot(q_embedding, emb) for emb in ai.docs.embeddings]
+    best_idx = argmax(scores)
+    best_score = scores[best_idx]
+    
+    # If similarity score is too low, fall back to keyword matching
+    if best_score < similarity_threshold
+        @info "Low similarity score ($best_score), trying keyword fallback"
+        
+        question_words = split(lowercase(question))
+        meaningful_words = [w for w in question_words if length(w) > 2]
+        
+        best_keyword_score = 0.0
+        best_keyword_idx = 1
+        
+        for (i, doc) in enumerate(ai.docs.documents)
+            doc_lower = lowercase(doc)
+            keyword_score = sum([occursin(word, doc_lower) ? 1.0 : 0.0 for word in meaningful_words])
+            
+            if keyword_score > best_keyword_score
+                best_keyword_score = keyword_score
+                best_keyword_idx = i
+            end
+        end
+        
+        # Use keyword result if it found any matches
+        if best_keyword_score > 0
+            return (ai.docs.documents[best_keyword_idx], Float32(best_keyword_score), ai.docs.documents[best_keyword_idx])
+        end
+    end
+    
+    # Default to similarity-based result
+    return (ai.docs.documents[best_idx], Float32(best_score), ai.docs.documents[best_idx])
+end
+
+# Simple TF-IDF based search (alternative approach)
+function answer_with_tfidf(ai::AGI, question::String)
+    """
+    Simple TF-IDF based document retrieval (alternative to embeddings)
+    """
+    if isempty(ai.docs.documents)
+        return ("No knowledge yet.", 0.0f0, "")
+    end
+    
+    question_words = Set(split(lowercase(question)))
+    
+    best_score = 0.0
+    best_idx = 1
+    
+    for (i, doc) in enumerate(ai.docs.documents)
+        doc_words = split(lowercase(doc))
+        doc_word_set = Set(doc_words)
+        
+        # Simple overlap score
+        overlap = length(intersect(question_words, doc_word_set))
+        
+        # Normalize by document length
+        normalized_score = overlap / length(doc_words)
+        
+        if normalized_score > best_score
+            best_score = normalized_score
+            best_idx = i
+        end
+    end
+    
+    return (ai.docs.documents[best_idx], Float32(best_score), ai.docs.documents[best_idx])
+end
