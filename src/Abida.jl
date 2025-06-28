@@ -1,7 +1,6 @@
 # src/Abida.jl
 module Abida
 
-# Add precompilation control to avoid method overwriting issues
 __precompile__(true)
 
 using LinearAlgebra
@@ -15,9 +14,13 @@ using SparseArrays
 using Logging
 using JLD2
 
+# Export all public functions
 export AGI, learn!, answer, cleanup!, reset_knowledge!
+export encode_text, rethink!, reiterate!, lookforword, answer_with_fallback
+export TransformerConfig, DEFAULT_CONFIG
+export Vocabulary, WordEmbeddings, PositionalEncoding, DocumentStore
 
-# Include files only once to avoid method overwriting
+# Include files
 include("types.jl")
 include("transformer_utils.jl")
 include("database.jl")
