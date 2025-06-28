@@ -35,4 +35,12 @@ graph TD;
 ## how to use it ? 
 clone it and run the module and run the example , simple as that
 OR
->] add https://github.com/JaewooJoung/Abida.jl 
+>] add https://github.com/JaewooJoung/Abida.jl
+
+---
+
+### **Will Abida.jl be a Julia module?**  
+*"I’ve thought about it, but progress has been slow. For now, I’ll incorporate your ideas and keep refining it until I’m satisfied."*  
+
+---
+
