@@ -318,25 +318,42 @@ end
 function save(ai::AGI, path::String)
     try
         JLD2.jldopen(path, "w") do file
-            write(file, "vocab_idx_to_word", ai.vocab.idx_to_word)
-            write(file, "vocab_word_to_idx", ai.vocab.word_to_idx)
-            write(file, "word_embeddings", ai.word_embeddings.matrix)
-            write(file, "positional_enc", ai.positional_enc.matrix)
-            write(file, "documents", ai.docs.documents)
-            write(file, "doc_embeddings", ai.docs.embeddings)
+            file["vocab_idx_to_word"] = ai.vocab.idx_to_word
+            file["vocab_word_to_idx"] = ai.vocab.word_to_idx
+            file["word_embeddings"] = ai.word_embeddings.matrix
+            file["positional_enc"] = ai.positional_enc.matrix
+            file["documents"] = ai.docs.documents
+            file["doc_embeddings"] = ai.docs.embeddings
         end
+        @info "Successfully saved AGI state" path=path documents=length(ai.docs.documents) vocab_size=length(ai.vocab.word_to_idx)
     catch e
         @error "Failed to save AGI state" path=path exception=e
+        rethrow(e)
     end
 end
 
 function load(path::String, config::TransformerConfig, db_path::String)
     try
-        data = JLD2.jldopen(path, "r")
-        vocab_words = read(data, "vocab_idx_to_word", Vector{String})
-        vocab_indices = read(data, "vocab_word_to_idx", Dict{String, Int})
+        # Open JLD2 file and read data using correct syntax
+        data = JLD2.jldopen(path, "r") do file
+            vocab_words = file["vocab_idx_to_word"]
+            vocab_indices = file["vocab_word_to_idx"]
+            word_embeddings_data = file["word_embeddings"]
+            positional_enc_data = file["positional_enc"]
+            documents_data = file["documents"]
+            doc_embeddings_data = file["doc_embeddings"]
+            
+            return (
+                vocab_words = vocab_words,
+                vocab_indices = vocab_indices,
+                word_embeddings = word_embeddings_data,
+                positional_enc = positional_enc_data,
+                documents = documents_data,
+                doc_embeddings = doc_embeddings_data
+            )
+        end
 
-        vocab = Vocabulary(vocab_indices, vocab_words)
+        vocab = Vocabulary(data.vocab_indices, data.vocab_words)
 
         # Create DB instance and get connection
         db = DuckDB.DB(db_path)
@@ -345,9 +362,9 @@ function load(path::String, config::TransformerConfig, db_path::String)
 
         AGI(
             vocab,
-            WordEmbeddings(read(data, "word_embeddings", Matrix{Float32})),
-            PositionalEncoding(read(data, "positional_enc", Matrix{Float32})),
-            DocumentStore(read(data, "documents", Vector{String}), read(data, "doc_embeddings", Vector{Vector{Float32}})),
+            WordEmbeddings(data.word_embeddings),
+            PositionalEncoding(data.positional_enc),
+            DocumentStore(data.documents, data.doc_embeddings),
             config,
             conn
         )
