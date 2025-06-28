@@ -219,15 +219,20 @@ end
 Finds the most relevant document to the given question and returns response, confidence, best_doc
 =#
 function answer(ai::AGI, question::String)
-    isempty(ai.docs.embeddings) && return ("No knowledge yet.", 0.0f0, "")
+    isempty(ai.docs.documents) && return ("I haven't learned anything yet.", 0.0f0, "")
 
-    q_embedding = normalize(transformer_encode(ai, encode_text(ai, question)))
-    scores = [dot(q_embedding, emb) for emb in ai.docs.embeddings]
-    best_idx = argmax(scores)
-    score = scores[best_idx]
-    return (ai.docs.documents[best_idx], Float32(score), ai.docs.documents[best_idx])
+    try
+        q_embedding = normalize(transformer_encode(ai, encode_text(ai, question)))
+        scores = [dot(q_embedding, normalize(doc_emb)) for doc_emb in ai.docs.embeddings]
+        best_idx = argmax(scores)
+        score = scores[best_idx]
+        confidence = min(max(score, 0.0f0), 1.0f0)  # Clamp between 0 and 1
+        return (ai.docs.documents[best_idx], confidence, ai.docs.documents[best_idx])
+    catch e
+        @error "Failed to generate answer" exception=e
+        return ("I encountered an error processing your question.", 0.0f0, "")
+    end
 end
-
 #=
     reset_knowledge!(ai)
 
