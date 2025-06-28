@@ -84,7 +84,7 @@ function load_data(db::DuckDBHandle, config::TransformerConfig)
     if length(vocab) > 0
         result = DBInterface.execute(db, "SELECT vocab_index, vector FROM word_embeddings ORDER BY vocab_index")
         for row in result
-            word_embeddings[:, row.vocab_index] = Float32.(collect(row.vector)))
+            word_embeddings[:, row.vocab_index] = Float32.(collect(row.vector))
         end
     end
 
