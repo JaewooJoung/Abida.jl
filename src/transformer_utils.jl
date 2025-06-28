@@ -2,7 +2,7 @@
 
 using Transformers
 using Transformers.Layers 
-using Statistics: mean, std
+using Statistics: mean, std, var
 using LinearAlgebra: norm
 using NNlib: softmax
 
