@@ -1,6 +1,5 @@
 # database.jl
 
-# Fix: Create explicit method signatures instead of using union type
 function init_database(db::DuckDB.DB)
     DBInterface.execute(db, """
         CREATE TABLE IF NOT EXISTS documents (
@@ -18,7 +17,7 @@ function init_database(db::DuckDB.DB)
         CREATE TABLE IF NOT EXISTS embeddings (
             doc_id INTEGER PRIMARY KEY,
             vector DOUBLE[] NOT NULL,
-            FOREIGN KEY (doc_id) REFERENCES documents(id)
+            FOREIGN KEY (doc_id) REFERENCES documents(id) ON DELETE CASCADE
         )
     """)
     DBInterface.execute(db, """
@@ -45,8 +44,8 @@ function init_database(db::DuckDB.DB)
             sentence_id_1 INTEGER,
             sentence_id_2 INTEGER,
             strength FLOAT,
-            FOREIGN KEY (sentence_id_1) REFERENCES documents(id),
-            FOREIGN KEY (sentence_id_2) REFERENCES documents(id)
+            FOREIGN KEY (sentence_id_1) REFERENCES documents(id) ON DELETE CASCADE,
+            FOREIGN KEY (sentence_id_2) REFERENCES documents(id) ON DELETE CASCADE
         )
     """)
     DBInterface.execute(db, """
@@ -54,12 +53,11 @@ function init_database(db::DuckDB.DB)
             id INTEGER PRIMARY KEY,
             question TEXT,
             answer TEXT,
-            timestamp DATETIME
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
 end
 
-# Add method for Connection type as well
 function init_database(conn::DuckDB.Connection)
     DBInterface.execute(conn, """
         CREATE TABLE IF NOT EXISTS documents (
@@ -77,7 +75,7 @@ function init_database(conn::DuckDB.Connection)
         CREATE TABLE IF NOT EXISTS embeddings (
             doc_id INTEGER PRIMARY KEY,
             vector DOUBLE[] NOT NULL,
-            FOREIGN KEY (doc_id) REFERENCES documents(id)
+            FOREIGN KEY (doc_id) REFERENCES documents(id) ON DELETE CASCADE
         )
     """)
     DBInterface.execute(conn, """
@@ -104,8 +102,8 @@ function init_database(conn::DuckDB.Connection)
             sentence_id_1 INTEGER,
             sentence_id_2 INTEGER,
             strength FLOAT,
-            FOREIGN KEY (sentence_id_1) REFERENCES documents(id),
-            FOREIGN KEY (sentence_id_2) REFERENCES documents(id)
+            FOREIGN KEY (sentence_id_1) REFERENCES documents(id) ON DELETE CASCADE,
+            FOREIGN KEY (sentence_id_2) REFERENCES documents(id) ON DELETE CASCADE
         )
     """)
     DBInterface.execute(conn, """
@@ -113,12 +111,11 @@ function init_database(conn::DuckDB.Connection)
             id INTEGER PRIMARY KEY,
             question TEXT,
             answer TEXT,
-            timestamp DATETIME
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
 end
 
-# Fix load_data function to accept both types
 function load_data(db::DuckDB.DB, config::TransformerConfig)
     documents = String[]
     vocab = Dict{String,Int}()
@@ -143,7 +140,9 @@ function load_data(db::DuckDB.DB, config::TransformerConfig)
     if length(vocab) > 0
         result = DBInterface.execute(db, "SELECT vocab_index, vector FROM word_embeddings ORDER BY vocab_index")
         for row in result
-            word_embeddings[:, row.vocab_index] = Float32.(collect(row.vector))
+            if row.vocab_index <= size(word_embeddings, 2)
+                word_embeddings[:, row.vocab_index] = Float32.(collect(row.vector))
+            end
         end
     end
 
@@ -174,7 +173,9 @@ function load_data(conn::DuckDB.Connection, config::TransformerConfig)
     if length(vocab) > 0
         result = DBInterface.execute(conn, "SELECT vocab_index, vector FROM word_embeddings ORDER BY vocab_index")
         for row in result
-            word_embeddings[:, row.vocab_index] = Float32.(collect(row.vector))
+            if row.vocab_index <= size(word_embeddings, 2)
+                word_embeddings[:, row.vocab_index] = Float32.(collect(row.vector))
+            end
         end
     end
 
@@ -182,15 +183,31 @@ function load_data(conn::DuckDB.Connection, config::TransformerConfig)
 end
 
 function batch_insert_vocabulary(conn::DuckDB.Connection, vocab::Dict{String,Int})
-    values = [(word, idx) for (word, idx) in vocab]
-    DBInterface.execute(conn, "BEGIN TRANSACTION")
-    DBInterface.execute(conn, "INSERT INTO vocabulary (word, index) VALUES (?, ?)", values)
-    DBInterface.execute(conn, "COMMIT")
+    if !isempty(vocab)
+        values = [(word, idx) for (word, idx) in vocab]
+        DBInterface.execute(conn, "BEGIN TRANSACTION")
+        try
+            DBInterface.execute(conn, "INSERT OR IGNORE INTO vocabulary (word, index) VALUES (?, ?)", values)
+            DBInterface.execute(conn, "COMMIT")
+        catch e
+            DBInterface.execute(conn, "ROLLBACK")
+            rethrow(e)
+        end
+    end
 end
 
 function batch_insert_word_embeddings(conn::DuckDB.Connection, word_embeddings::Matrix{Float32}, vocab::Dict{String,Int})
-    values = [(idx, Float64.(word_embeddings[:, idx])) for (word, idx) in vocab]
-    DBInterface.execute(conn, "BEGIN TRANSACTION")
-    DBInterface.execute(conn, "INSERT INTO word_embeddings (vocab_index, vector) VALUES (?, ?)", values)
-    DBInterface.execute(conn, "COMMIT")
+    if !isempty(vocab)
+        values = [(idx, Float64.(word_embeddings[:, idx])) for (word, idx) in vocab if idx <= size(word_embeddings, 2)]
+        if !isempty(values)
+            DBInterface.execute(conn, "BEGIN TRANSACTION")
+            try
+                DBInterface.execute(conn, "INSERT OR IGNORE INTO word_embeddings (vocab_index, vector) VALUES (?, ?)", values)
+                DBInterface.execute(conn, "COMMIT")
+            catch e
+                DBInterface.execute(conn, "ROLLBACK")
+                rethrow(e)
+            end
+        end
+    end
 end
