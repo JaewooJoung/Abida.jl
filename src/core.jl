@@ -4,11 +4,6 @@ using DuckDB
 using Logging
 using JLD2
 
-# Internal includes
-include("types.jl")
-include("transformer_utils.jl")  # renamed from transformer.txt
-include("database.jl")
-
 #=
     AGI(db_path="Abida.duckdb", config=DEFAULT_CONFIG)
 
@@ -20,10 +15,10 @@ function AGI(db_path::String="Abida.duckdb", config::TransformerConfig=DEFAULT_C
         db = DuckDB.DB(db_path)
         conn = DuckDB.connect(db)
         
-        # Initialize database using the DB object (this should work now)
+        # Initialize database using the DB object
         init_database(db)
 
-        # Load data using the DB object instead of connection for consistency
+        # Load data using the DB object
         documents, vocab_dict, doc_embeddings, word_embeddings_matrix = load_data(db, config)
 
         # Build vocabulary structure
@@ -47,7 +42,7 @@ function AGI(db_path::String="Abida.duckdb", config::TransformerConfig=DEFAULT_C
             PositionalEncoding(positional_enc),
             DocumentStore(documents, doc_embeddings),
             config,
-            conn  # Store the connection in the struct
+            conn
         )
     catch e
         @error "Failed to initialize AGI" exception=e
@@ -152,9 +147,13 @@ function learn!(ai::AGI, text::String)
             push!(ai.vocab.idx_to_word, word)
             
             # Insert into database
-            DBInterface.execute(ai.conn, """
-                INSERT OR IGNORE INTO vocabulary (word, index) VALUES (?, ?)
-            """, (word, new_idx))
+            try
+                DBInterface.execute(ai.conn, """
+                    INSERT OR IGNORE INTO vocabulary (word, index) VALUES (?, ?)
+                """, (word, new_idx))
+            catch e
+                @warn "Failed to insert vocabulary word" word=word index=new_idx exception=e
+            end
         end
     end
 
@@ -164,15 +163,21 @@ function learn!(ai::AGI, text::String)
     if vocab_changed && old_size < vocab_size
         new_cols = vocab_size - old_size
         new_embeddings = randn(Float32, ai.config.d_model, new_cols)
+        
+        # Create new matrix by concatenating - this works with mutable struct
         ai.word_embeddings.matrix = hcat(ai.word_embeddings.matrix, new_embeddings)
         
         # Insert new embeddings into database
         for (word, idx) in ai.vocab.word_to_idx
             if idx > old_size
-                vector_data = Float64.(ai.word_embeddings.matrix[:, idx])
-                DBInterface.execute(ai.conn, """
-                    INSERT OR IGNORE INTO word_embeddings (vocab_index, vector) VALUES (?, ?)
-                """, (idx, vector_data))
+                try
+                    vector_data = Float64.(ai.word_embeddings.matrix[:, idx])
+                    DBInterface.execute(ai.conn, """
+                        INSERT OR IGNORE INTO word_embeddings (vocab_index, vector) VALUES (?, ?)
+                    """, (idx, vector_data))
+                catch e
+                    @warn "Failed to insert word embedding" word=word index=idx exception=e
+                end
             end
         end
     end
@@ -183,21 +188,25 @@ function learn!(ai::AGI, text::String)
     push!(ai.docs.embeddings, doc_embedding)
 
     # Insert document and embedding into database
-    with_transaction(ai.conn) do
-        # Get next document ID
-        result = DBInterface.execute(ai.conn, "SELECT COALESCE(MAX(id), 0) + 1 as next_id FROM documents")
-        next_id = first(result).next_id
-        
-        # Insert document
-        DBInterface.execute(ai.conn, """
-            INSERT INTO documents (id, content) VALUES (?, ?)
-        """, (next_id, text))
+    try
+        with_transaction(ai.conn) do
+            # Get next document ID
+            result = DBInterface.execute(ai.conn, "SELECT COALESCE(MAX(id), 0) + 1 as next_id FROM documents")
+            next_id = first(result).next_id
+            
+            # Insert document
+            DBInterface.execute(ai.conn, """
+                INSERT INTO documents (id, content) VALUES (?, ?)
+            """, (next_id, text))
 
-        # Insert embedding
-        vector_doubles = Float64.(doc_embedding)
-        DBInterface.execute(ai.conn, """
-            INSERT INTO embeddings (doc_id, vector) VALUES (?, ?)
-        """, (next_id, vector_doubles))
+            # Insert embedding
+            vector_doubles = Float64.(doc_embedding)
+            DBInterface.execute(ai.conn, """
+                INSERT INTO embeddings (doc_id, vector) VALUES (?, ?)
+            """, (next_id, vector_doubles))
+        end
+    catch e
+        @warn "Failed to insert document into database" text=text exception=e
     end
 end
 
@@ -222,16 +231,20 @@ end
 Clears all learned knowledge from the database and resets internal state.
 =#
 function reset_knowledge!(ai::AGI)
-    DBInterface.execute(ai.conn, "DELETE FROM documents")
-    DBInterface.execute(ai.conn, "DELETE FROM vocabulary")
-    DBInterface.execute(ai.conn, "DELETE FROM embeddings")
-    DBInterface.execute(ai.conn, "DELETE FROM word_embeddings")
+    try
+        DBInterface.execute(ai.conn, "DELETE FROM documents")
+        DBInterface.execute(ai.conn, "DELETE FROM vocabulary")
+        DBInterface.execute(ai.conn, "DELETE FROM embeddings")
+        DBInterface.execute(ai.conn, "DELETE FROM word_embeddings")
 
-    ai.docs.documents = String[]
-    ai.docs.embeddings = Vector{Float32}[]
-    ai.vocab.word_to_idx = Dict{String,Int}()
-    ai.vocab.idx_to_word = String[]
-    ai.word_embeddings.matrix = zeros(Float32, ai.config.d_model, 1)
+        ai.docs.documents = String[]
+        ai.docs.embeddings = Vector{Float32}[]
+        ai.vocab.word_to_idx = Dict{String,Int}()
+        ai.vocab.idx_to_word = String[]
+        ai.word_embeddings.matrix = zeros(Float32, ai.config.d_model, 1)
+    catch e
+        @warn "Failed to reset knowledge" exception=e
+    end
 end
 
 #=
@@ -240,25 +253,29 @@ end
 Analyzes relationships between sentences based on similarity.
 =#
 function rethink!(ai::AGI, prompt::String)
-    with_transaction(ai.conn) do
-        # Clear existing relationships
-        DBInterface.execute(ai.conn, "DELETE FROM sentence_relationships")
-        
-        # Calculate similarities between all document pairs
-        for i in 1:length(ai.docs.documents)-1
-            for j in i+1:length(ai.docs.documents)
-                if i <= length(ai.docs.embeddings) && j <= length(ai.docs.embeddings)
-                    emb_i = ai.docs.embeddings[i]
-                    emb_j = ai.docs.embeddings[j]
-                    sim = dot(emb_i, emb_j) / (norm(emb_i) * norm(emb_j))
-                    
-                    DBInterface.execute(ai.conn, """
-                        INSERT INTO sentence_relationships (sentence_id_1, sentence_id_2, strength)
-                        VALUES (?, ?, ?)
-                    """, (i, j, Float64(sim)))
+    try
+        with_transaction(ai.conn) do
+            # Clear existing relationships
+            DBInterface.execute(ai.conn, "DELETE FROM sentence_relationships")
+            
+            # Calculate similarities between all document pairs
+            for i in 1:length(ai.docs.documents)-1
+                for j in i+1:length(ai.docs.documents)
+                    if i <= length(ai.docs.embeddings) && j <= length(ai.docs.embeddings)
+                        emb_i = ai.docs.embeddings[i]
+                        emb_j = ai.docs.embeddings[j]
+                        sim = dot(emb_i, emb_j) / (norm(emb_i) * norm(emb_j))
+                        
+                        DBInterface.execute(ai.conn, """
+                            INSERT INTO sentence_relationships (sentence_id_1, sentence_id_2, strength)
+                            VALUES (?, ?, ?)
+                        """, (i, j, Float64(sim)))
+                    end
                 end
             end
         end
+    catch e
+        @warn "Failed to compute relationships" exception=e
     end
 end
 
@@ -268,11 +285,15 @@ end
 Re-encodes all stored documents to update their embeddings.
 =#
 function reiterate!(ai::AGI)
-    ai.docs.embeddings = Vector{Float32}[]
-    for text in ai.docs.documents
-        embeddings = encode_text(ai, text)
-        doc_embedding = normalize(transformer_encode(ai, embeddings))
-        push!(ai.docs.embeddings, doc_embedding)
+    try
+        ai.docs.embeddings = Vector{Float32}[]
+        for text in ai.docs.documents
+            embeddings = encode_text(ai, text)
+            doc_embedding = normalize(transformer_encode(ai, embeddings))
+            push!(ai.docs.embeddings, doc_embedding)
+        end
+    catch e
+        @warn "Failed to re-encode documents" exception=e
     end
 end
 
@@ -325,13 +346,17 @@ end
 Saves AGI state to disk.
 =#
 function save(ai::AGI, path::String)
-    JLD2.jldopen(path, "w") do file
-        write(file, "vocab_idx_to_word", ai.vocab.idx_to_word)
-        write(file, "vocab_word_to_idx", ai.vocab.word_to_idx)
-        write(file, "word_embeddings", ai.word_embeddings.matrix)
-        write(file, "positional_enc", ai.positional_enc.matrix)
-        write(file, "documents", ai.docs.documents)
-        write(file, "doc_embeddings", ai.docs.embeddings)
+    try
+        JLD2.jldopen(path, "w") do file
+            write(file, "vocab_idx_to_word", ai.vocab.idx_to_word)
+            write(file, "vocab_word_to_idx", ai.vocab.word_to_idx)
+            write(file, "word_embeddings", ai.word_embeddings.matrix)
+            write(file, "positional_enc", ai.positional_enc.matrix)
+            write(file, "documents", ai.docs.documents)
+            write(file, "doc_embeddings", ai.docs.embeddings)
+        end
+    catch e
+        @error "Failed to save AGI state" path=path exception=e
     end
 end
 
@@ -341,23 +366,28 @@ end
 Loads AGI state from disk.
 =#
 function load(path::String, config::TransformerConfig, db_path::String)
-    data = JLD2.jldopen(path, "r")
-    vocab_words = read(data, "vocab_idx_to_word", Vector{String})
-    vocab_indices = read(data, "vocab_word_to_idx", Dict{String, Int})
+    try
+        data = JLD2.jldopen(path, "r")
+        vocab_words = read(data, "vocab_idx_to_word", Vector{String})
+        vocab_indices = read(data, "vocab_word_to_idx", Dict{String, Int})
 
-    vocab = Vocabulary(vocab_indices, vocab_words)
+        vocab = Vocabulary(vocab_indices, vocab_words)
 
-    # Create DB instance and get connection
-    db = DuckDB.DB(db_path)
-    conn = DuckDB.connect(db)
-    init_database(db)
+        # Create DB instance and get connection
+        db = DuckDB.DB(db_path)
+        conn = DuckDB.connect(db)
+        init_database(db)
 
-    AGI(
-        vocab,
-        WordEmbeddings(read(data, "word_embeddings", Matrix{Float32})),
-        PositionalEncoding(read(data, "positional_enc", Matrix{Float32})),
-        DocumentStore(read(data, "documents", Vector{String}), read(data, "doc_embeddings", Vector{Vector{Float32}})),
-        config,
-        conn
-    )
+        AGI(
+            vocab,
+            WordEmbeddings(read(data, "word_embeddings", Matrix{Float32})),
+            PositionalEncoding(read(data, "positional_enc", Matrix{Float32})),
+            DocumentStore(read(data, "documents", Vector{String}), read(data, "doc_embeddings", Vector{Vector{Float32}})),
+            config,
+            conn
+        )
+    catch e
+        @error "Failed to load AGI state" path=path exception=e
+        rethrow(e)
+    end
 end
