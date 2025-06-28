@@ -40,13 +40,28 @@ function multi_head_attention(Q::Matrix{Float32}, K::Matrix{Float32}, V::Matrix{
     d_model, seq_len = size(Q)
     d_k = d_model ÷ n_heads
 
-    Q_ = reshape(Q, d_k, n_heads, seq_len)
-    K_ = reshape(K, d_k, n_heads, seq_len)
-    V_ = reshape(V, d_k, n_heads, seq_len)
+    # Reshape to (d_k, n_heads, seq_len)
+    Q_reshaped = reshape(Q, (d_k, n_heads, seq_len))
+    K_reshaped = reshape(K, (d_k, n_heads, seq_len))
+    V_reshaped = reshape(V, (d_k, n_heads, seq_len))
 
-    scores = (Q_' .* K_) / sqrt(d_k)
-    attn_weights = softmax(scores, dims=2)
-    output = reshape(attn_weights * V_', d_model, seq_len)
+    # Compute attention scores (more numerically stable version)
+    scores = zeros(Float32, seq_len, seq_len, n_heads)
+    for h in 1:n_heads
+        Q_head = view(Q_reshaped, :, h, :)
+        K_head = view(K_reshaped, :, h, :)
+        scores[:, :, h] = (Q_head' * K_head) ./ sqrt(d_k)
+    end
+
+    # Apply softmax
+    attn_weights = softmax(scores; dims=2)
+
+    # Compute output
+    output = zeros(Float32, d_model, seq_len)
+    for h in 1:n_heads
+        V_head = view(V_reshaped, :, h, :)
+        output += reshape(attn_weights[:, :, h] * V_head', d_model, seq_len)
+    end
 
     return output
 end
