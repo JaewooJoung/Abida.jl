@@ -4,11 +4,6 @@ using DuckDB
 using Logging
 using JLD2
 
-#=
-    AGI(db_path="Abida.duckdb", config=DEFAULT_CONFIG)
-
-Constructs an AGI instance by loading data from disk/database.
-=#
 function AGI(db_path::String="Abida.duckdb", config::TransformerConfig=DEFAULT_CONFIG)
     try
         # Create database and connection
@@ -50,18 +45,8 @@ function AGI(db_path::String="Abida.duckdb", config::TransformerConfig=DEFAULT_C
     end
 end
 
-#=
-    normalize(v)
-
-Normalizes a vector.
-=#
 normalize(v::Vector{Float32}) = v / (norm(v) + eps(Float32))
 
-#=
-    with_transaction(f, conn)
-
-Runs a function inside a database transaction.
-=#
 function with_transaction(f, conn)
     DBInterface.execute(conn, "BEGIN TRANSACTION")
     try
@@ -74,11 +59,6 @@ function with_transaction(f, conn)
     end
 end
 
-#=
-    encode_text(ai, text)
-
-Encodes input text into embeddings.
-=#
 function encode_text(ai::AGI, text::String)
     words = split(lowercase(text))
     seq_length = min(length(words), ai.config.max_seq_length)
@@ -105,37 +85,24 @@ function encode_text(ai::AGI, text::String)
     return embeddings
 end
 
-#=
-    transformer_encode(ai, embeddings)
-
-Applies transformer layers to embeddings.
-=#
 function transformer_encode(ai::AGI, embeddings::Matrix{Float32})
-    # Layer normalization before attention
-    embeddings_norm = layer_norm(embeddings)
-
     # Multi-head attention
-    attn_output = multi_head_attention(embeddings_norm, embeddings_norm, embeddings_norm, ai.config.n_head)
+    attn_output = multi_head_attention(embeddings, embeddings, embeddings, ai.config.n_head)
 
-    # Add & Norm with residual connection
+    # Add & Norm
     attn_output = attn_output + embeddings
     attn_output = layer_norm(attn_output)
 
     # Feed-forward network
     ff_output = feed_forward(attn_output, ai.config.d_ff)
 
-    # Final Add & Norm
+    # Add & Norm
     ff_output = ff_output + attn_output
     ff_output = layer_norm(ff_output)
 
     return vec(mean(ff_output, dims=2))
 end
 
-#=
-    learn!(ai, text)
-
-Adds new text to the knowledge base.
-=#
 function learn!(ai::AGI, text::String)
     push!(ai.docs.documents, text)
     words = split(lowercase(text))
@@ -167,7 +134,7 @@ function learn!(ai::AGI, text::String)
         new_cols = vocab_size - old_size
         new_embeddings = randn(Float32, ai.config.d_model, new_cols)
         
-        # Create new matrix by concatenating - this works with mutable struct
+        # Create new matrix by concatenating
         ai.word_embeddings.matrix = hcat(ai.word_embeddings.matrix, new_embeddings)
         
         # Insert new embeddings into database
@@ -213,37 +180,46 @@ function learn!(ai::AGI, text::String)
     end
 end
 
-#=
-    answer(ai, question)
-
-Finds the most relevant document to the given question and returns response, confidence, best_doc
-=#
 function answer(ai::AGI, question::String)
-    isempty(ai.docs.documents) && return ("I haven't learned anything yet.", 0.0f0, "")
-
-    try
-        q_embedding = normalize(transformer_encode(ai, encode_text(ai, question)))
-        scores = [dot(q_embedding, normalize(doc_emb)) for doc_emb in ai.docs.embeddings]
-        best_idx = argmax(scores)
-        score = scores[best_idx]
-        confidence = min(max(score, 0.0f0), 1.0f0)  # Clamp between 0 and 1
-        return (ai.docs.documents[best_idx], confidence, ai.docs.documents[best_idx])
-    catch e
-        @error "Failed to generate answer" exception=e
-        return ("I encountered an error processing your question.", 0.0f0, "")
+    if isempty(ai.docs.embeddings)
+        response = "No knowledge yet."
+        # Log the interaction
+        try
+            DBInterface.execute(ai.conn, """
+                INSERT INTO interactions (question, answer) VALUES (?, ?)
+            """, (question, response))
+        catch e
+            @warn "Failed to log interaction" exception=e
+        end
+        return (response, 0.0f0, "")
     end
-end
-#=
-    reset_knowledge!(ai)
 
-Clears all learned knowledge from the database and resets internal state.
-=#
+    q_embedding = normalize(transformer_encode(ai, encode_text(ai, question)))
+    scores = [dot(q_embedding, emb) for emb in ai.docs.embeddings]
+    best_idx = argmax(scores)
+    score = scores[best_idx]
+    response = ai.docs.documents[best_idx]
+    
+    # Log the interaction
+    try
+        DBInterface.execute(ai.conn, """
+            INSERT INTO interactions (question, answer) VALUES (?, ?)
+        """, (question, response))
+    catch e
+        @warn "Failed to log interaction" exception=e
+    end
+    
+    return (response, Float32(score), response)
+end
+
 function reset_knowledge!(ai::AGI)
     try
-        DBInterface.execute(ai.conn, "DELETE FROM documents")
-        DBInterface.execute(ai.conn, "DELETE FROM vocabulary")
+        # Delete in correct order to respect foreign key constraints
+        DBInterface.execute(ai.conn, "DELETE FROM sentence_relationships")
         DBInterface.execute(ai.conn, "DELETE FROM embeddings")
+        DBInterface.execute(ai.conn, "DELETE FROM documents")
         DBInterface.execute(ai.conn, "DELETE FROM word_embeddings")
+        DBInterface.execute(ai.conn, "DELETE FROM vocabulary")
 
         ai.docs.documents = String[]
         ai.docs.embeddings = Vector{Float32}[]
@@ -255,11 +231,6 @@ function reset_knowledge!(ai::AGI)
     end
 end
 
-#=
-    rethink!(ai, prompt)
-
-Analyzes relationships between sentences based on similarity.
-=#
 function rethink!(ai::AGI, prompt::String)
     try
         with_transaction(ai.conn) do
@@ -287,11 +258,6 @@ function rethink!(ai::AGI, prompt::String)
     end
 end
 
-#=
-    reiterate!(ai)
-
-Re-encodes all stored documents to update their embeddings.
-=#
 function reiterate!(ai::AGI)
     try
         ai.docs.embeddings = Vector{Float32}[]
@@ -305,11 +271,6 @@ function reiterate!(ai::AGI)
     end
 end
 
-#=
-    lookforword(ai, word)
-
-Searches for documents containing the given word.
-=#
 function lookforword(ai::AGI, word::String)
     results = String[]
     word_lower = lowercase(word)
@@ -321,13 +282,10 @@ function lookforword(ai::AGI, word::String)
     return results
 end
 
-#=
-    answer_with_fallback(ai, question, fallback)
-
-Returns fallback if no confident match is found.
-=#
 function answer_with_fallback(ai::AGI, question::String, fallback="I don't know.")
-    isempty(ai.docs.embeddings) && return fallback
+    if isempty(ai.docs.embeddings)
+        return fallback
+    end
     q_embedding = normalize(transformer_encode(ai, encode_text(ai, question)))
     scores = [dot(q_embedding, emb) for emb in ai.docs.embeddings]
     best_idx = argmax(scores)
@@ -335,11 +293,6 @@ function answer_with_fallback(ai::AGI, question::String, fallback="I don't know.
     return score > 0.1 ? ai.docs.documents[best_idx] : fallback
 end
 
-#=
-    cleanup!(ai)
-
-Cleans up resources (e.g., closes database connection).
-=#
 function cleanup!(ai::AGI)
     try
         close(ai.conn)
@@ -348,11 +301,6 @@ function cleanup!(ai::AGI)
     end
 end
 
-#=
-    save(ai, path)
-
-Saves AGI state to disk.
-=#
 function save(ai::AGI, path::String)
     try
         JLD2.jldopen(path, "w") do file
@@ -368,11 +316,6 @@ function save(ai::AGI, path::String)
     end
 end
 
-#=
-    load(path, config, db_path)
-
-Loads AGI state from disk.
-=#
 function load(path::String, config::TransformerConfig, db_path::String)
     try
         data = JLD2.jldopen(path, "r")
