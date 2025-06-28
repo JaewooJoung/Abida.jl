@@ -180,6 +180,8 @@ function learn!(ai::AGI, text::String)
     end
 end
 
+# Improved answer() function to replace in core.jl
+
 function answer(ai::AGI, question::String)
     if isempty(ai.docs.embeddings)
         response = "No knowledge yet."
@@ -194,11 +196,44 @@ function answer(ai::AGI, question::String)
         return (response, 0.0f0, "")
     end
 
+    # Get question embedding
     q_embedding = normalize(transformer_encode(ai, encode_text(ai, question)))
-    scores = [dot(q_embedding, emb) for emb in ai.docs.embeddings]
-    best_idx = argmax(scores)
-    score = scores[best_idx]
+    
+    # Calculate combined scores (embedding + keyword matching)
+    question_words = split(lowercase(question))
+    # Filter out very short words
+    meaningful_words = [w for w in question_words if length(w) > 2]
+    
+    best_score = -1.0
+    best_idx = 1
+    scores = Float32[]
+    
+    for (i, doc_emb) in enumerate(ai.docs.embeddings)
+        # Embedding similarity
+        emb_similarity = dot(q_embedding, doc_emb)
+        
+        # Keyword matching bonus
+        doc_lower = lowercase(ai.docs.documents[i])
+        keyword_matches = sum([occursin(word, doc_lower) ? 1.0 : 0.0 for word in meaningful_words])
+        
+        # Combined score with keyword boost
+        if keyword_matches > 0
+            # Boost embedding score when keywords match
+            combined_score = emb_similarity + (keyword_matches * 0.2)
+        else
+            combined_score = emb_similarity
+        end
+        
+        push!(scores, combined_score)
+        
+        if combined_score > best_score
+            best_score = combined_score
+            best_idx = i
+        end
+    end
+    
     response = ai.docs.documents[best_idx]
+    final_score = Float32(best_score)
     
     # Log the interaction using explicit nextval()
     try
@@ -209,7 +244,7 @@ function answer(ai::AGI, question::String)
         @warn "Failed to log interaction" exception=e
     end
     
-    return (response, Float32(score), response)
+    return (response, final_score, response)
 end
 
 function reset_knowledge!(ai::AGI)
