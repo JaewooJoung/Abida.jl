@@ -1,4 +1,4 @@
-# core.jl - Using DuckDB sequences properly
+# core.jl - Using explicit nextval() calls
 
 using DuckDB
 using Logging
@@ -157,15 +157,15 @@ function learn!(ai::AGI, text::String)
     doc_embedding = normalize(transformer_encode(ai, embeddings))
     push!(ai.docs.embeddings, doc_embedding)
 
-    # Insert document and embedding into database using sequence
+    # Insert document and embedding into database using explicit nextval()
     try
         with_transaction(ai.conn) do
-            # Insert document - let the sequence generate the ID automatically
+            # Use explicit nextval() in the INSERT statement
             DBInterface.execute(ai.conn, """
-                INSERT INTO documents (content) VALUES (?)
+                INSERT INTO documents (id, content) VALUES (nextval('doc_id_seq'), ?)
             """, (text,))
             
-            # Get the ID that was just generated
+            # Get the current value of the sequence (the ID that was just used)
             result = DBInterface.execute(ai.conn, "SELECT currval('doc_id_seq') as doc_id")
             doc_id = first(result).doc_id
 
@@ -183,10 +183,10 @@ end
 function answer(ai::AGI, question::String)
     if isempty(ai.docs.embeddings)
         response = "No knowledge yet."
-        # Log the interaction - let sequence generate ID automatically
+        # Log the interaction using explicit nextval()
         try
             DBInterface.execute(ai.conn, """
-                INSERT INTO interactions (question, answer) VALUES (?, ?)
+                INSERT INTO interactions (id, question, answer) VALUES (nextval('interaction_id_seq'), ?, ?)
             """, (question, response))
         catch e
             @warn "Failed to log interaction" exception=e
@@ -200,10 +200,10 @@ function answer(ai::AGI, question::String)
     score = scores[best_idx]
     response = ai.docs.documents[best_idx]
     
-    # Log the interaction - let sequence generate ID automatically
+    # Log the interaction using explicit nextval()
     try
         DBInterface.execute(ai.conn, """
-            INSERT INTO interactions (question, answer) VALUES (?, ?)
+            INSERT INTO interactions (id, question, answer) VALUES (nextval('interaction_id_seq'), ?, ?)
         """, (question, response))
     catch e
         @warn "Failed to log interaction" exception=e
