@@ -17,7 +17,7 @@ function init_database(db::DuckDB.DB)
         CREATE TABLE IF NOT EXISTS embeddings (
             doc_id INTEGER PRIMARY KEY,
             vector DOUBLE[] NOT NULL,
-            FOREIGN KEY (doc_id) REFERENCES documents(id) ON DELETE CASCADE
+            FOREIGN KEY (doc_id) REFERENCES documents(id)
         )
     """)
     DBInterface.execute(db, """
@@ -44,8 +44,8 @@ function init_database(db::DuckDB.DB)
             sentence_id_1 INTEGER,
             sentence_id_2 INTEGER,
             strength FLOAT,
-            FOREIGN KEY (sentence_id_1) REFERENCES documents(id) ON DELETE CASCADE,
-            FOREIGN KEY (sentence_id_2) REFERENCES documents(id) ON DELETE CASCADE
+            FOREIGN KEY (sentence_id_1) REFERENCES documents(id),
+            FOREIGN KEY (sentence_id_2) REFERENCES documents(id)
         )
     """)
     DBInterface.execute(db, """
@@ -75,7 +75,7 @@ function init_database(conn::DuckDB.Connection)
         CREATE TABLE IF NOT EXISTS embeddings (
             doc_id INTEGER PRIMARY KEY,
             vector DOUBLE[] NOT NULL,
-            FOREIGN KEY (doc_id) REFERENCES documents(id) ON DELETE CASCADE
+            FOREIGN KEY (doc_id) REFERENCES documents(id)
         )
     """)
     DBInterface.execute(conn, """
@@ -102,8 +102,8 @@ function init_database(conn::DuckDB.Connection)
             sentence_id_1 INTEGER,
             sentence_id_2 INTEGER,
             strength FLOAT,
-            FOREIGN KEY (sentence_id_1) REFERENCES documents(id) ON DELETE CASCADE,
-            FOREIGN KEY (sentence_id_2) REFERENCES documents(id) ON DELETE CASCADE
+            FOREIGN KEY (sentence_id_1) REFERENCES documents(id),
+            FOREIGN KEY (sentence_id_2) REFERENCES documents(id)
         )
     """)
     DBInterface.execute(conn, """
