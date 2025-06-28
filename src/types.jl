@@ -17,7 +17,13 @@ end
 
 Vocabulary() = Vocabulary(Dict(), String[])
 
-# Make WordEmbeddings mutable so we can update the matrix
+# Add iteration support for Vocabulary
+Base.iterate(v::Vocabulary) = iterate(v.word_to_idx)
+Base.iterate(v::Vocabulary, state) = iterate(v.word_to_idx, state)
+Base.isempty(v::Vocabulary) = isempty(v.word_to_idx)
+Base.length(v::Vocabulary) = length(v.word_to_idx)
+
+# Make WordEmbeddings mutable
 mutable struct WordEmbeddings
     matrix::Matrix{Float32}
 end
@@ -26,7 +32,11 @@ struct PositionalEncoding
     matrix::Matrix{Float32}
 end
 
-# Make DocumentStore mutable so we can add documents and embeddings
+# Add size method for PositionalEncoding
+Base.size(pe::PositionalEncoding) = size(pe.matrix)
+Base.size(pe::PositionalEncoding, dim::Int) = size(pe.matrix, dim)
+
+# Make DocumentStore mutable
 mutable struct DocumentStore
     documents::Vector{String}
     embeddings::Vector{Vector{Float32}}
@@ -39,4 +49,15 @@ mutable struct AGI
     docs::DocumentStore
     config::TransformerConfig
     conn::DuckDB.Connection
+end
+
+# Add convenience accessors for backward compatibility with tests
+Base.getproperty(agi::AGI, name::Symbol) = begin
+    if name === :documents
+        return agi.docs.documents
+    elseif name === :doc_embeddings
+        return agi.docs.embeddings
+    else
+        return getfield(agi, name)
+    end
 end
