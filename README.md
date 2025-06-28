@@ -40,7 +40,7 @@ OR
 ---
 
 ### **Will Abida.jl be a Julia module?**  
-*"I’ve thought about it, but progress has been slow. For now, I’ll incorporate your ideas and keep refining it until I’m satisfied."*  
+*""Yeah, I’ve thought about it, just moving kinda slow right now. Gonna work with your suggestions(Issues are welcome!) and tweak things till it feels right!""*  
 -Jaewoo-
 
 ---
