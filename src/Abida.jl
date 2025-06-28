@@ -17,6 +17,7 @@ using JLD2
 # Export all public functions
 export AGI, learn!, answer, cleanup!, reset_knowledge!
 export encode_text, rethink!, reiterate!, lookforword, answer_with_fallback
+export save, load 
 export TransformerConfig, DEFAULT_CONFIG
 export Vocabulary, WordEmbeddings, PositionalEncoding, DocumentStore
 
