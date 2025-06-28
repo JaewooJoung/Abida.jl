@@ -111,17 +111,20 @@ end
 Applies transformer layers to embeddings.
 =#
 function transformer_encode(ai::AGI, embeddings::Matrix{Float32})
-    # Multi-head attention
-    attn_output = multi_head_attention(embeddings, embeddings, embeddings, ai.config.n_head)
+    # Layer normalization before attention
+    embeddings_norm = layer_norm(embeddings)
 
-    # Add & Norm
+    # Multi-head attention
+    attn_output = multi_head_attention(embeddings_norm, embeddings_norm, embeddings_norm, ai.config.n_head)
+
+    # Add & Norm with residual connection
     attn_output = attn_output + embeddings
     attn_output = layer_norm(attn_output)
 
     # Feed-forward network
     ff_output = feed_forward(attn_output, ai.config.d_ff)
 
-    # Add & Norm
+    # Final Add & Norm
     ff_output = ff_output + attn_output
     ff_output = layer_norm(ff_output)
 
