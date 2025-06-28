@@ -1,4 +1,4 @@
-# core.jl
+# core.jl - Using DuckDB sequences properly
 
 using DuckDB
 using Logging
@@ -157,23 +157,23 @@ function learn!(ai::AGI, text::String)
     doc_embedding = normalize(transformer_encode(ai, embeddings))
     push!(ai.docs.embeddings, doc_embedding)
 
-    # Insert document and embedding into database
+    # Insert document and embedding into database using sequence
     try
         with_transaction(ai.conn) do
-            # Get next document ID
-            result = DBInterface.execute(ai.conn, "SELECT COALESCE(MAX(id), 0) + 1 as next_id FROM documents")
-            next_id = first(result).next_id
-            
-            # Insert document
+            # Insert document - let the sequence generate the ID automatically
             DBInterface.execute(ai.conn, """
-                INSERT INTO documents (id, content) VALUES (?, ?)
-            """, (next_id, text))
+                INSERT INTO documents (content) VALUES (?)
+            """, (text,))
+            
+            # Get the ID that was just generated
+            result = DBInterface.execute(ai.conn, "SELECT currval('doc_id_seq') as doc_id")
+            doc_id = first(result).doc_id
 
-            # Insert embedding
+            # Insert embedding with the same ID
             vector_doubles = Float64.(doc_embedding)
             DBInterface.execute(ai.conn, """
                 INSERT INTO embeddings (doc_id, vector) VALUES (?, ?)
-            """, (next_id, vector_doubles))
+            """, (doc_id, vector_doubles))
         end
     catch e
         @warn "Failed to insert document into database" text=text exception=e
@@ -183,7 +183,7 @@ end
 function answer(ai::AGI, question::String)
     if isempty(ai.docs.embeddings)
         response = "No knowledge yet."
-        # Log the interaction
+        # Log the interaction - let sequence generate ID automatically
         try
             DBInterface.execute(ai.conn, """
                 INSERT INTO interactions (question, answer) VALUES (?, ?)
@@ -200,7 +200,7 @@ function answer(ai::AGI, question::String)
     score = scores[best_idx]
     response = ai.docs.documents[best_idx]
     
-    # Log the interaction
+    # Log the interaction - let sequence generate ID automatically
     try
         DBInterface.execute(ai.conn, """
             INSERT INTO interactions (question, answer) VALUES (?, ?)
@@ -215,7 +215,6 @@ end
 function reset_knowledge!(ai::AGI)
     try
         # Manual cascade delete - delete in correct order to respect foreign key constraints
-        # First delete dependent tables, then parent tables
         with_transaction(ai.conn) do
             DBInterface.execute(ai.conn, "DELETE FROM sentence_relationships")
             DBInterface.execute(ai.conn, "DELETE FROM embeddings")
@@ -224,8 +223,15 @@ function reset_knowledge!(ai::AGI)
             DBInterface.execute(ai.conn, "DELETE FROM vocabulary")
             DBInterface.execute(ai.conn, "DELETE FROM feedback")
             DBInterface.execute(ai.conn, "DELETE FROM model_state")
-            # Note: interactions table doesn't reference others, so it's safe to leave or delete
             DBInterface.execute(ai.conn, "DELETE FROM interactions")
+            
+            # Reset sequences to start from 1 again
+            DBInterface.execute(ai.conn, "DROP SEQUENCE IF EXISTS doc_id_seq")
+            DBInterface.execute(ai.conn, "DROP SEQUENCE IF EXISTS interaction_id_seq")
+            DBInterface.execute(ai.conn, "DROP SEQUENCE IF EXISTS feedback_id_seq")
+            DBInterface.execute(ai.conn, "CREATE SEQUENCE doc_id_seq START 1")
+            DBInterface.execute(ai.conn, "CREATE SEQUENCE interaction_id_seq START 1")
+            DBInterface.execute(ai.conn, "CREATE SEQUENCE feedback_id_seq START 1")
         end
 
         # Reset in-memory state
