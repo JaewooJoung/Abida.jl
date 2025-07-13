@@ -15,6 +15,8 @@ Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Transformers = "21ca0261-441d-5938-ace7-c90938fde4d4"
 TextAnalysis = "a2db99b7-8b79-58f8-94bf-bbc811eef33d"
+Languages = "8ef0a80a-d612-501e-9bc1-6e85bd6e97c6"
+
 # Only add these if you need the enhanced features
 # JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 # HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
