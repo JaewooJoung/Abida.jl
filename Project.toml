@@ -21,7 +21,7 @@ Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 [compat]
 julia = "1.11"
 DuckDB = "1.0"
-JLD2 = "0.4"
+JLD2 = "0.5.15"
 DBInterface = "2.0"
 
 [extras]
