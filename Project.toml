@@ -1,7 +1,7 @@
 name = "Abida"
 uuid = "23832524-0b97-42bf-bbfe-519582e38482"
 authors = ["JaewooJoung <jaewoo.joung@outlook.com>"]
-version = "0.1.0"
+version = "0.1.1"
 
 [deps]
 # Original core dependencies
