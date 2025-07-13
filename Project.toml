@@ -4,6 +4,7 @@ authors = ["JaewooJoung <jaewoo.joung@outlook.com>"]
 version = "0.1.0"
 
 [deps]
+# Original core dependencies
 Transformers = "21ca0261-441d-5938-ace7-c90938fde4d4"
 DuckDB = "d2f5444f-75bc-4fdf-ac35-56f514c445e1"
 Languages = "8ef0a80b-9436-5d2c-a485-80b904378c43"
@@ -20,6 +21,18 @@ JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 NNlib = "872c559c-99b0-510c-b3b7-b6c96a88d5cd"
 DBInterface = "a10d1c49-ce27-4219-8d33-6db1a4562965"
 
+# New dependencies for enhanced features
+JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
+HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+Gumbo = "708ec375-b3d6-5a57-a7ce-8257bf98657a"
+Cascadia = "54eefc05-d75b-58dc-a909-1a2f183bee13"
+OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
+ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
+NearestNeighbors = "b8a86587-4115-5ab1-83bc-aa920d37bbce"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+URIs = "5c2747f8-b7ea-4ff2-ba2e-563bfd36b1d4"
+
 [compat]
 julia = "1.11"
 Transformers = "0.3"
@@ -30,6 +43,16 @@ TextAnalysis = "0.8.2"
 JLD2 = "0.4"
 NNlib = "0.9"
 DBInterface = "2.5"
+# Add compat for new packages
+JSON3 = "1"
+HTTP = "1"
+Gumbo = "0.8"
+Cascadia = "1"
+OrderedCollections = "1"
+StatsBase = "0.33"
+ProgressMeter = "1"
+NearestNeighbors = "0.4"
+URIs = "1"
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
